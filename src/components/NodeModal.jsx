@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import useGigaStore from "../store/useGigaStore";
 import { getSwatches } from "../themes";
 
@@ -15,6 +15,29 @@ export default function NodeModal({ nodeId, onClose }) {
   const { nodes, connections, updateNode, deleteNode, updateConnection } = useGigaStore();
   const node = nodes.find((n) => n.id === nodeId);
   const nodeConns = connections.filter((c) => c.fromNode === nodeId || c.toNode === nodeId);
+
+  // Local editing state to prevent cursor jumping from Firestore snapshots
+  const [localTitle, setLocalTitle] = useState(node?.title || "");
+  const [localNotes, setLocalNotes] = useState(node?.notes || "");
+  const titleRef = useRef(null);
+  const notesRef = useRef(null);
+
+  // Track whether inputs are focused
+  const titleFocused = useRef(false);
+  const notesFocused = useRef(false);
+
+  // Sync from Firestore only when not actively editing
+  useEffect(() => {
+    if (node && !titleFocused.current) {
+      setLocalTitle(node.title || "");
+    }
+  }, [node?.title]);
+
+  useEffect(() => {
+    if (node && !notesFocused.current) {
+      setLocalNotes(node.notes || "");
+    }
+  }, [node?.notes]);
 
   if (!node) return null;
 
@@ -33,9 +56,13 @@ export default function NodeModal({ nodeId, onClose }) {
              node.type === "Idé" ? "💡" : "📌"}
           </span>
           <input
+            ref={titleRef}
             className="modal-title-input"
-            value={node.title}
-            onChange={(e) => update("title", e.target.value)}
+            value={localTitle}
+            onChange={(e) => setLocalTitle(e.target.value)}
+            onFocus={() => { titleFocused.current = true; }}
+            onBlur={() => { titleFocused.current = false; update("title", localTitle); }}
+            onKeyDown={(e) => { if (e.key === "Enter") { titleRef.current?.blur(); } }}
             placeholder="Tittel..."
           />
           <button className="btn btn-ghost btn-icon" onClick={onClose} title="Lukk">✕</button>
@@ -47,8 +74,11 @@ export default function NodeModal({ nodeId, onClose }) {
           <div className="modal-section">
             <label>📝 Notater</label>
             <textarea
-              value={node.notes || ""}
-              onChange={(e) => update("notes", e.target.value)}
+              ref={notesRef}
+              value={localNotes}
+              onChange={(e) => setLocalNotes(e.target.value)}
+              onFocus={() => { notesFocused.current = true; }}
+              onBlur={() => { notesFocused.current = false; update("notes", localNotes); }}
               placeholder="Beskriv denne noden – hva skjer her, hvem er ansvarlig, hvilke systemer er involvert..."
               style={{ minHeight: 120 }}
             />

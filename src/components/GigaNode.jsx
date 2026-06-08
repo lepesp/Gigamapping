@@ -1,4 +1,4 @@
-import { useRef, useState, useCallback } from "react";
+import { useRef, useState, useCallback, useEffect } from "react";
 import useGigaStore from "../store/useGigaStore";
 
 const NODE_TYPES = ["Generell", "Avdeling", "System", "Prosess", "Person", "Mål", "Problem", "Idé"];
@@ -14,6 +14,14 @@ export default function GigaNode({
   const resizing = useRef(false);
   const resizeStart = useRef({ mx: 0, my: 0, w: 0, h: 0 });
   const [editingTitle, setEditingTitle] = useState(false);
+  const [localTitle, setLocalTitle] = useState(node.title);
+
+  // Sync from Firestore when NOT editing
+  useEffect(() => {
+    if (!editingTitle) {
+      setLocalTitle(node.title);
+    }
+  }, [node.title, editingTitle]);
 
   // ── Drag ──
   const onMouseDownNode = useCallback((e) => {
@@ -129,10 +137,10 @@ export default function GigaNode({
           <input
             className="node-title"
             autoFocus
-            value={node.title}
-            onChange={(e) => updateNode(node.id, { title: e.target.value })}
-            onBlur={() => setEditingTitle(false)}
-            onKeyDown={(e) => { if (e.key === "Enter") setEditingTitle(false); e.stopPropagation(); }}
+            value={localTitle}
+            onChange={(e) => setLocalTitle(e.target.value)}
+            onBlur={() => { updateNode(node.id, { title: localTitle }); setEditingTitle(false); }}
+            onKeyDown={(e) => { if (e.key === "Enter") { updateNode(node.id, { title: localTitle }); setEditingTitle(false); } e.stopPropagation(); }}
             onClick={(e) => e.stopPropagation()}
           />
         ) : (
