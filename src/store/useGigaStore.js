@@ -401,6 +401,22 @@ const useGigaStore = create((set, get) => ({
     const snap = await getDocs(q);
     if (snap.empty) return false;
     const invite = snap.docs[0].data();
+
+    // Check if user already has equal or higher role — don't downgrade
+    const mapSnap = await getDocs(query(collection(db, "maps"), where("__name__", "==", invite.mapId)));
+    if (!mapSnap.empty) {
+      const mapDoc = mapSnap.docs[0].data();
+      const currentRole = mapDoc.members?.[user.uid]?.role;
+      const roleRank = { owner: 3, editor: 2, viewer: 1 };
+      if (currentRole && (roleRank[currentRole] || 0) >= (roleRank[invite.role] || 0)) {
+        // Already has equal or higher access — just navigate
+        subscribeToMap(invite.mapId);
+        set({ pendingInvite: null });
+        window.history.replaceState({}, "", window.location.pathname);
+        return true;
+      }
+    }
+
     // Add user as member
     await addMember(
       invite.mapId,
