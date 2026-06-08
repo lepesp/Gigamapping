@@ -74,7 +74,7 @@ export default function PresenceChat() {
         position: "absolute",
         left: 20,
         top: 20,
-        bottom: 170,
+        ...(collapsed ? {} : { bottom: 170 }),
         width: 220,
         display: collapsed ? "block" : "flex",
         flexDirection: "column",
