@@ -9,8 +9,17 @@ export default function Dashboard() {
   const { user, maps, setCurrentMapId, subscribeToMap, leaveMap } = useGigaStore();
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState("");
+  const [selectedIcon, setSelectedIcon] = useState("🗺");
   const [error, setError] = useState(null);
   const [shareMapId, setShareMapId] = useState(null);
+
+  const iconOptions = [
+    "🗺", "🏢", "⚙️", "📱", "💰", "📋", "👥", "🤝",
+    "🎨", "📊", "🛡", "🚛", "⚡", "🌐", "📦", "📅",
+    "💡", "✅", "🎓", "🏥", "🍽", "🌿", "🔧", "🚀",
+    "🎯", "🧩", "🔮", "🏗", "⛵", "✈️", "🏠", "📄",
+    "🎮", "🎵", "📸", "🛒", "💻", "🔬", "⚽", "🐾",
+  ];
 
   const openMap = (map) => {
     subscribeToMap(map.id);
@@ -22,6 +31,7 @@ export default function Dashboard() {
     try {
       const ref = await addDoc(collection(db, "maps"), {
         title: newName.trim(),
+        icon: selectedIcon,
         ownerId: user.uid,
         members: {
           [user.uid]: {
@@ -36,6 +46,7 @@ export default function Dashboard() {
       });
       setCreating(false);
       setNewName("");
+      setSelectedIcon("🗺");
       subscribeToMap(ref.id);
     } catch (err) {
       console.error("Create map failed:", err);
@@ -113,7 +124,7 @@ export default function Dashboard() {
     return (
       <div key={map.id} className="glass-card map-card" style={{ position: "relative" }}>
         <div onClick={() => openMap(map)} style={{ cursor: "pointer" }}>
-          <div className="map-card-icon">{getMapIcon(map.title)}</div>
+          <div className="map-card-icon">{map.icon || getMapIcon(map.title)}</div>
           <div className="map-card-title">{map.title}</div>
           <div className="map-card-meta">
             Oppdatert {formatDate(map.updatedAt)}
@@ -199,9 +210,25 @@ export default function Dashboard() {
                 autoFocus
                 placeholder="Navn på kart..."
                 value={newName}
-                onChange={(e) => setNewName(e.target.value)}
+                onChange={(e) => { setNewName(e.target.value); setSelectedIcon(getMapIcon(e.target.value)); }}
                 onKeyDown={(e) => { if (e.key === "Enter") createMap(); if (e.key === "Escape") setCreating(false); }}
               />
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 4, maxHeight: 72, overflowY: "auto" }}>
+                {iconOptions.map((icon) => (
+                  <button
+                    key={icon}
+                    onClick={() => setSelectedIcon(icon)}
+                    style={{
+                      fontSize: 18, padding: "3px 5px", borderRadius: 8, cursor: "pointer",
+                      border: selectedIcon === icon ? "2px solid var(--accent)" : "2px solid transparent",
+                      background: selectedIcon === icon ? "var(--accent-glow)" : "transparent",
+                      lineHeight: 1, transition: "all 0.15s",
+                    }}
+                  >
+                    {icon}
+                  </button>
+                ))}
+              </div>
               <div style={{ display: "flex", gap: 8 }}>
                 <button className="btn btn-primary" onClick={createMap} style={{ flex: 1 }}>Opprett</button>
                 <button className="btn btn-ghost" onClick={() => setCreating(false)}>Avbryt</button>
