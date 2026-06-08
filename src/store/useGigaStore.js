@@ -322,7 +322,13 @@ const useGigaStore = create((set, get) => ({
       const online = snap.docs
         .map((d) => ({ uid: d.id, ...d.data() }))
         .filter((u) => u.lastSeen && (now - u.lastSeen.toMillis()) < 90000);
-      set({ onlineUsers: online });
+      // Only update state if the online users list actually changed
+      const prev = get().onlineUsers;
+      const prevUids = prev.map((u) => u.uid).sort().join(",");
+      const newUids = online.map((u) => u.uid).sort().join(",");
+      if (prevUids !== newUids) {
+        set({ onlineUsers: online });
+      }
     });
 
     // Subscribe to chat (last 100 messages)
