@@ -16,8 +16,10 @@ export default function MapEditor() {
     connectingFrom, setConnectingFrom,
     openModalNodeId, setOpenModalNodeId,
     addNode, addConnection, promoteIdea,
-    currentMapId,
+    currentMapId, userRole,
   } = useGigaStore();
+
+  const isViewer = userRole === "viewer";
 
   const canvasRef = useRef(null);
   const isPanning = useRef(false);
@@ -80,8 +82,9 @@ export default function MapEditor() {
     return () => el.removeEventListener("wheel", onWheel);
   }, [onWheel]);
 
-  // ── Double click: add node ──
+  // ── Double click: add node (disabled for viewers) ──
   const onDoubleClick = useCallback((e) => {
+    if (isViewer) return;
     if (e.target !== canvasRef.current) return;
     const rect = canvasRef.current.getBoundingClientRect();
     const x = (e.clientX - rect.left - pan.x) / zoom;
@@ -93,16 +96,17 @@ export default function MapEditor() {
       color: "#e8edf5",
       type: "Generell",
     });
-  }, [pan, zoom, addNode]);
+  }, [pan, zoom, addNode, isViewer]);
 
-  // ── Right click: context menu ──
+  // ── Right click: context menu (disabled for viewers) ──
   const onContextMenu = useCallback((e) => {
     e.preventDefault();
+    if (isViewer) return;
     const rect = canvasRef.current.getBoundingClientRect();
     const x = (e.clientX - rect.left - pan.x) / zoom;
     const y = (e.clientY - rect.top - pan.y) / zoom;
     setContextMenu({ screenX: e.clientX, screenY: e.clientY, canvasX: x, canvasY: y });
-  }, [pan, zoom]);
+  }, [pan, zoom, isViewer]);
 
   // ── Connecting nodes ──
   const startConnecting = useCallback((nodeId, startX, startY) => {
@@ -169,8 +173,9 @@ export default function MapEditor() {
         onDoubleClick={onDoubleClick}
         onContextMenu={onContextMenu}
         onClick={() => { setContextMenu(null); if (connectingFrom) cancelConnecting(); }}
-        onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; }}
+        onDragOver={(e) => { if (!isViewer) { e.preventDefault(); e.dataTransfer.dropEffect = "move"; } }}
         onDrop={(e) => {
+          if (isViewer) return;
           e.preventDefault();
           const ideaId = e.dataTransfer.getData("text/plain");
           if (!ideaId || !canvasRef.current) return;
@@ -205,6 +210,7 @@ export default function MapEditor() {
               onStartConnect={startConnecting}
               onFinishConnect={finishConnecting}
               zoom={zoom}
+              readOnly={isViewer}
             />
           ))}
         </div>
@@ -220,8 +226,15 @@ export default function MapEditor() {
         {/* Mini map */}
         <MiniMap nodes={nodes} pan={pan} zoom={zoom} canvasRef={canvasRef} />
 
-        {/* Idea brainstorm panel */}
-        <IdeaPanel pan={pan} zoom={zoom} canvasRef={canvasRef} />
+        {/* Idea brainstorm panel — hidden for viewers */}
+        {!isViewer && <IdeaPanel pan={pan} zoom={zoom} canvasRef={canvasRef} />}
+
+        {/* Read-only banner for viewers */}
+        {isViewer && (
+          <div className="readonly-banner">
+            👁 Kun lesetilgang
+          </div>
+        )}
 
         {/* Hint */}
         {nodes.length === 0 && (
@@ -246,6 +259,7 @@ export default function MapEditor() {
         <NodeModal
           nodeId={openModalNodeId}
           onClose={() => setOpenModalNodeId(null)}
+          readOnly={isViewer}
         />
       )}
 

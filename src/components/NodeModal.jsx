@@ -11,7 +11,7 @@ const NODE_TYPES = Object.keys(TYPE_COLORS);
 
 const CONN_COLORS = ["#6366f1", "#8b5cf6", "#06b6d4", "#10b981", "#f59e0b", "#ef4444", "#f472b6", "#94a3b8"];
 
-export default function NodeModal({ nodeId, onClose }) {
+export default function NodeModal({ nodeId, onClose, readOnly = false }) {
   const { nodes, connections, updateNode, deleteNode, updateConnection } = useGigaStore();
   const node = nodes.find((n) => n.id === nodeId);
   const nodeConns = connections.filter((c) => c.fromNode === nodeId || c.toNode === nodeId);
@@ -55,16 +55,22 @@ export default function NodeModal({ nodeId, onClose }) {
              node.type === "Mål" ? "🎯" : node.type === "Problem" ? "⚠️" :
              node.type === "Idé" ? "💡" : "📌"}
           </span>
-          <input
-            ref={titleRef}
-            className="modal-title-input"
-            value={localTitle}
-            onChange={(e) => setLocalTitle(e.target.value)}
-            onFocus={() => { titleFocused.current = true; }}
-            onBlur={() => { titleFocused.current = false; update("title", localTitle); }}
-            onKeyDown={(e) => { if (e.key === "Enter") { titleRef.current?.blur(); } }}
-            placeholder="Tittel..."
-          />
+          {readOnly ? (
+            <span className="modal-title-input" style={{ flex: 1, fontSize: 18, fontWeight: 600 }}>
+              {node.title || "Uten tittel"}
+            </span>
+          ) : (
+            <input
+              ref={titleRef}
+              className="modal-title-input"
+              value={localTitle}
+              onChange={(e) => setLocalTitle(e.target.value)}
+              onFocus={() => { titleFocused.current = true; }}
+              onBlur={() => { titleFocused.current = false; update("title", localTitle); }}
+              onKeyDown={(e) => { if (e.key === "Enter") { titleRef.current?.blur(); } }}
+              placeholder="Tittel..."
+            />
+          )}
           <button className="btn btn-ghost btn-icon" onClick={onClose} title="Lukk">✕</button>
         </div>
 
@@ -73,48 +79,58 @@ export default function NodeModal({ nodeId, onClose }) {
           {/* Notes */}
           <div className="modal-section">
             <label>📝 Notater</label>
-            <textarea
-              ref={notesRef}
-              value={localNotes}
-              onChange={(e) => setLocalNotes(e.target.value)}
-              onFocus={() => { notesFocused.current = true; }}
-              onBlur={() => { notesFocused.current = false; update("notes", localNotes); }}
-              placeholder="Beskriv denne noden – hva skjer her, hvem er ansvarlig, hvilke systemer er involvert..."
-              style={{ minHeight: 120 }}
-            />
+            {readOnly ? (
+              <div style={{ fontSize: 13, color: "var(--text-secondary)", whiteSpace: "pre-wrap", minHeight: 40 }}>
+                {node.notes || <span style={{ opacity: 0.4 }}>Ingen notater</span>}
+              </div>
+            ) : (
+              <textarea
+                ref={notesRef}
+                value={localNotes}
+                onChange={(e) => setLocalNotes(e.target.value)}
+                onFocus={() => { notesFocused.current = true; }}
+                onBlur={() => { notesFocused.current = false; update("notes", localNotes); }}
+                placeholder="Beskriv denne noden – hva skjer her, hvem er ansvarlig, hvilke systemer er involvert..."
+                style={{ minHeight: 120 }}
+              />
+            )}
           </div>
 
           {/* Type */}
-          <div className="modal-section">
-            <label>🏷 Type</label>
-            <div className="type-pills">
-              {NODE_TYPES.map((t) => (
-                <button
-                  key={t}
-                  className={`type-pill${node.type === t ? " active" : ""}`}
-                  onClick={() => update("type", t)}
-                  style={node.type === t ? { background: TYPE_COLORS[t], borderColor: TYPE_COLORS[t] } : {}}
-                >
-                  {t}
-                </button>
-              ))}
+          {!readOnly && (
+            <div className="modal-section">
+              <label>🏷 Type</label>
+              <div className="type-pills">
+                {NODE_TYPES.map((t) => (
+                  <button
+                    key={t}
+                    className={`type-pill${node.type === t ? " active" : ""}`}
+                    onClick={() => update("type", t)}
+                    style={node.type === t ? { background: TYPE_COLORS[t], borderColor: TYPE_COLORS[t] } : {}}
+                  >
+                    {t}
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Color */}
-          <div className="modal-section">
-            <label>🎨 Bakgrunnsfarge</label>
-            <div className="color-swatches">
-              {getSwatches().map((c) => (
-                <div
-                  key={c}
-                  className={`color-swatch${node.color === c ? " active" : ""}`}
-                  style={{ background: c }}
-                  onClick={() => update("color", c)}
-                />
-              ))}
+          {!readOnly && (
+            <div className="modal-section">
+              <label>🎨 Bakgrunnsfarge</label>
+              <div className="color-swatches">
+                {getSwatches().map((c) => (
+                  <div
+                    key={c}
+                    className={`color-swatch${node.color === c ? " active" : ""}`}
+                    style={{ background: c }}
+                    onClick={() => update("color", c)}
+                  />
+                ))}
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Connections list */}
           {nodeConns.length > 0 && (
@@ -134,24 +150,30 @@ export default function NodeModal({ nodeId, onClose }) {
                       <span style={{ flex: 1, fontSize: 13, color: "var(--text-primary)" }}>
                         {other?.title || "Ukjent"}
                       </span>
-                      <input
-                        value={conn.label || ""}
-                        onChange={(e) => updateConnection(conn.id, { label: e.target.value })}
-                        placeholder="Label..."
-                        style={{ width: 110, fontSize: 12 }}
-                      />
-                      <div style={{ display: "flex", gap: 4 }}>
-                        {CONN_COLORS.map((c) => (
-                          <div
-                            key={c}
-                            onClick={() => updateConnection(conn.id, { color: c })}
-                            style={{
-                              width: 14, height: 14, borderRadius: "50%", background: c,
-                              cursor: "pointer", border: conn.color === c ? "2px solid #1e293b" : "2px solid transparent",
-                            }}
-                          />
-                        ))}
-                      </div>
+                      {!readOnly ? (
+                        <input
+                          value={conn.label || ""}
+                          onChange={(e) => updateConnection(conn.id, { label: e.target.value })}
+                          placeholder="Label..."
+                          style={{ width: 110, fontSize: 12 }}
+                        />
+                      ) : conn.label ? (
+                        <span style={{ fontSize: 12, color: "var(--text-muted)" }}>{conn.label}</span>
+                      ) : null}
+                      {!readOnly && (
+                        <div style={{ display: "flex", gap: 4 }}>
+                          {CONN_COLORS.map((c) => (
+                            <div
+                              key={c}
+                              onClick={() => updateConnection(conn.id, { color: c })}
+                              style={{
+                                width: 14, height: 14, borderRadius: "50%", background: c,
+                                cursor: "pointer", border: conn.color === c ? "2px solid #1e293b" : "2px solid transparent",
+                              }}
+                            />
+                          ))}
+                        </div>
+                      )}
                     </div>
                   );
                 })}
@@ -162,13 +184,15 @@ export default function NodeModal({ nodeId, onClose }) {
 
         {/* Footer */}
         <div className="modal-footer">
-          <button
-            className="btn btn-danger"
-            onClick={() => { deleteNode(nodeId); onClose(); }}
-          >
-            🗑 Slett node
-          </button>
-          <div style={{ display: "flex", gap: 8 }}>
+          {!readOnly && (
+            <button
+              className="btn btn-danger"
+              onClick={() => { deleteNode(nodeId); onClose(); }}
+            >
+              🗑 Slett node
+            </button>
+          )}
+          <div style={{ display: "flex", gap: 8, marginLeft: readOnly ? "auto" : 0 }}>
             <button className="btn btn-ghost" onClick={onClose}>Lukk</button>
           </div>
         </div>

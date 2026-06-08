@@ -7,6 +7,11 @@ import {
   doc,
   onSnapshot,
   serverTimestamp,
+  query,
+  where,
+  getDocs,
+  arrayUnion,
+  arrayRemove,
 } from "firebase/firestore";
 import { db } from "../firebase";
 
@@ -18,6 +23,10 @@ const useGigaStore = create((set, get) => ({
   // Current map
   currentMapId: null,
   setCurrentMapId: (id) => set({ currentMapId: id }),
+
+  // User role for current map
+  userRole: null, // 'owner' | 'editor' | 'viewer' | null
+  currentMapData: null, // full map document data
 
   // Maps list
   maps: [],
@@ -149,16 +158,105 @@ const useGigaStore = create((set, get) => ({
     await deleteDoc(doc(db, "maps", currentMapId, "ideas", ideaId));
   },
 
+  // --- Member management ---
+  addMember: async (mapId, uid, role, email, displayName) => {
+    const ref = doc(db, "maps", mapId);
+    await updateDoc(ref, {
+      [`members.${uid}`]: { role, email, displayName },
+      memberUids: arrayUnion(uid),
+      updatedAt: serverTimestamp(),
+    });
+  },
+
+  removeMember: async (mapId, uid) => {
+    const { currentMapData } = get();
+    if (!currentMapData?.members) return;
+    // Build new members without the removed uid
+    const newMembers = { ...currentMapData.members };
+    delete newMembers[uid];
+    const ref = doc(db, "maps", mapId);
+    await updateDoc(ref, {
+      members: newMembers,
+      memberUids: arrayRemove(uid),
+      updatedAt: serverTimestamp(),
+    });
+  },
+
+  updateMemberRole: async (mapId, uid, newRole) => {
+    const ref = doc(db, "maps", mapId);
+    await updateDoc(ref, {
+      [`members.${uid}.role`]: newRole,
+      updatedAt: serverTimestamp(),
+    });
+  },
+
+  transferOwnership: async (mapId, newOwnerUid) => {
+    const { user, currentMapData } = get();
+    if (!user || !currentMapData) return;
+    const ref = doc(db, "maps", mapId);
+    await updateDoc(ref, {
+      ownerId: newOwnerUid,
+      [`members.${newOwnerUid}.role`]: "owner",
+      [`members.${user.uid}.role`]: "editor",
+      updatedAt: serverTimestamp(),
+    });
+  },
+
+  leaveMap: async (mapId) => {
+    const { user } = get();
+    if (!user) return;
+    // Use get to get fresh currentMapData
+    const store = get();
+    const mapData = store.currentMapData;
+    if (!mapData?.members) return;
+    const newMembers = { ...mapData.members };
+    delete newMembers[user.uid];
+    const ref = doc(db, "maps", mapId);
+    await updateDoc(ref, {
+      members: newMembers,
+      memberUids: arrayRemove(user.uid),
+      updatedAt: serverTimestamp(),
+    });
+    // Go back to dashboard
+    set({ currentMapId: null, currentMapData: null, userRole: null });
+  },
+
+  // Search users by email
+  searchUsers: async (emailQuery) => {
+    if (!emailQuery || emailQuery.length < 3) return [];
+    const ref = collection(db, "users");
+    const q = query(ref, where("email", "==", emailQuery.toLowerCase()));
+    const snap = await getDocs(q);
+    return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  },
+
   // --- Realtime listeners ---
   unsubscribeNodes: null,
   unsubscribeConnections: null,
   unsubscribeIdeas: null,
+  unsubscribeMapDoc: null,
 
   subscribeToMap: (mapId) => {
-    const { unsubscribeNodes, unsubscribeConnections, unsubscribeIdeas } = get();
+    const { unsubscribeNodes, unsubscribeConnections, unsubscribeIdeas, unsubscribeMapDoc, user } = get();
     if (unsubscribeNodes) unsubscribeNodes();
     if (unsubscribeConnections) unsubscribeConnections();
     if (unsubscribeIdeas) unsubscribeIdeas();
+    if (unsubscribeMapDoc) unsubscribeMapDoc();
+
+    // Listen to the map document for membership/role changes
+    const unsubMap = onSnapshot(
+      doc(db, "maps", mapId),
+      (snap) => {
+        if (!snap.exists()) {
+          // Map was deleted or user lost access
+          set({ currentMapId: null, currentMapData: null, userRole: null });
+          return;
+        }
+        const data = { id: snap.id, ...snap.data() };
+        const role = data.members?.[user?.uid]?.role || (data.ownerId === user?.uid ? "owner" : null);
+        set({ currentMapData: data, userRole: role });
+      }
+    );
 
     const unsubNodes = onSnapshot(
       collection(db, "maps", mapId, "nodes"),
@@ -191,14 +289,16 @@ const useGigaStore = create((set, get) => ({
       unsubscribeNodes: unsubNodes,
       unsubscribeConnections: unsubConns,
       unsubscribeIdeas: unsubIdeas,
+      unsubscribeMapDoc: unsubMap,
     });
   },
 
   unsubscribeAll: () => {
-    const { unsubscribeNodes, unsubscribeConnections, unsubscribeIdeas } = get();
+    const { unsubscribeNodes, unsubscribeConnections, unsubscribeIdeas, unsubscribeMapDoc } = get();
     if (unsubscribeNodes) unsubscribeNodes();
     if (unsubscribeConnections) unsubscribeConnections();
     if (unsubscribeIdeas) unsubscribeIdeas();
+    if (unsubscribeMapDoc) unsubscribeMapDoc();
   },
 
   // History (undo/redo) - basic snapshot

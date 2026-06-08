@@ -1,0 +1,121 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ─── Helper functions ───────────────────────────────────
+
+    // Check if the requester is authenticated
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // Get the authenticated user's UID
+    function uid() {
+      return request.auth.uid;
+    }
+
+    // Get the map document data (for subcollection rules)
+    function mapData(mapId) {
+      return get(/databases/$(database)/documents/maps/$(mapId)).data;
+    }
+
+    // Check if the user is the owner of a map
+    function isOwner(mapId) {
+      return mapData(mapId).ownerId == uid();
+    }
+
+    // Check if the user has a specific role on a map
+    function hasRole(mapId, role) {
+      return uid() in mapData(mapId).memberUids
+          && mapData(mapId).members[uid()].role == role;
+    }
+
+    // Check if the user is at least a viewer (any member)
+    function isMember(mapId) {
+      return uid() in mapData(mapId).memberUids;
+    }
+
+    // Check if the user can edit content (owner or editor)
+    function canEdit(mapId) {
+      return isOwner(mapId) || hasRole(mapId, 'editor');
+    }
+
+
+    // ─── User profiles ──────────────────────────────────────
+    // Users can only read and write their own profile.
+
+    match /users/{userId} {
+      // Any authenticated user can read profiles (needed for email-based user search)
+      allow read:   if isSignedIn();
+      // Users can only write their own profile
+      allow write:  if isSignedIn() && uid() == userId;
+    }
+
+
+    // ─── Maps ───────────────────────────────────────────────
+
+    match /maps/{mapId} {
+
+      // Any authenticated member can read the map
+      allow read: if isSignedIn() && isMember(mapId);
+
+      // Only authenticated users can create maps, and they must set
+      // themselves as the owner
+      allow create: if isSignedIn()
+                    && request.resource.data.ownerId == uid();
+
+      // Owners can update anything on the map (including members)
+      // Editors can ONLY update the 'updatedAt' field — nothing else
+      allow update: if isSignedIn()
+                    && (
+                      // Owner — full update access
+                      resource.data.ownerId == uid()
+
+                      // Editor — can only touch updatedAt
+                      || (
+                        hasRole(mapId, 'editor')
+                        && request.resource.data.diff(resource.data).affectedKeys()
+                            .hasOnly(['updatedAt'])
+                      )
+                    );
+
+      // Only the owner can delete the map
+      allow delete: if isSignedIn()
+                    && resource.data.ownerId == uid();
+
+
+      // ─── Nodes subcollection ────────────────────────────
+      match /nodes/{nodeId} {
+        // Members (any role) can read nodes
+        allow read:   if isSignedIn() && isMember(mapId);
+
+        // Owners and editors can create, update, delete nodes
+        allow create: if isSignedIn() && canEdit(mapId);
+        allow update: if isSignedIn() && canEdit(mapId);
+        allow delete: if isSignedIn() && canEdit(mapId);
+      }
+
+
+      // ─── Connections subcollection ──────────────────────
+      match /connections/{connId} {
+        allow read:   if isSignedIn() && isMember(mapId);
+        allow create: if isSignedIn() && canEdit(mapId);
+        allow update: if isSignedIn() && canEdit(mapId);
+        allow delete: if isSignedIn() && canEdit(mapId);
+      }
+
+
+      // ─── Ideas subcollection ───────────────────────────
+      match /ideas/{ideaId} {
+        allow read:   if isSignedIn() && isMember(mapId);
+        allow create: if isSignedIn() && canEdit(mapId);
+        allow update: if isSignedIn() && canEdit(mapId);
+        allow delete: if isSignedIn() && canEdit(mapId);
+      }
+    }
+
+
+    // ─── Deny everything else ─────────────────────────────
+    // Any path not explicitly matched above is denied by default.
+  }
+}

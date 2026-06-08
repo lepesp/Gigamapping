@@ -5,6 +5,7 @@ import { auth, db } from "../firebase";
 import useGigaStore from "../store/useGigaStore";
 import ExportModal from "./ExportModal";
 import ThemePicker from "./ThemePicker";
+import ShareModal from "./ShareModal";
 
 export default function Toolbar() {
   const {
@@ -13,12 +14,16 @@ export default function Toolbar() {
     addNode, pan, zoom, setZoom, setPan,
     selectedNodeId, deleteNode,
     selectedConnectionId, deleteConnection,
+    userRole,
   } = useGigaStore();
 
   const currentMap = maps.find((m) => m.id === currentMapId);
   const [showExport, setShowExport] = useState(false);
+  const [showShare, setShowShare] = useState(false);
   const [savingTitle, setSavingTitle] = useState(false);
   const [title, setTitle] = useState(currentMap?.title || "");
+  const isViewer = userRole === "viewer";
+  const isOwner = userRole === "owner";
 
   const saveTitle = async () => {
     if (!currentMapId || !title.trim()) return;
@@ -87,15 +92,24 @@ export default function Toolbar() {
 
         <div className="toolbar-sep" />
 
-        {/* Add node */}
-        <button className="btn btn-primary" onClick={handleAddNode} id="add-node-btn">
-          + Ny node
-        </button>
+        {/* Add node — hidden for viewers */}
+        {!isViewer && (
+          <button className="btn btn-primary" onClick={handleAddNode} id="add-node-btn">
+            + Ny node
+          </button>
+        )}
+
+        {/* Role badge for non-owners */}
+        {userRole && userRole !== "owner" && (
+          <span className={`role-badge ${userRole}`}>
+            {userRole === "editor" ? "Les og skriv" : "Kun les"}
+          </span>
+        )}
 
         <div className="toolbar-sep" />
 
-        {/* Delete selected */}
-        {selectedNodeId && (
+        {/* Delete selected — hidden for viewers */}
+        {!isViewer && selectedNodeId && (
           <button
             className="btn btn-danger"
             onClick={() => deleteNode(selectedNodeId)}
@@ -104,7 +118,7 @@ export default function Toolbar() {
             🗑 Slett node
           </button>
         )}
-        {selectedConnectionId && (
+        {!isViewer && selectedConnectionId && (
           <button
             className="btn btn-danger"
             onClick={() => deleteConnection(selectedConnectionId)}
@@ -134,6 +148,13 @@ export default function Toolbar() {
           ↑ Eksporter
         </button>
 
+        {/* Share button — owners only */}
+        {isOwner && (
+          <button className="btn btn-ghost" onClick={() => setShowShare(true)} title="Del kart">
+            🔗 Del
+          </button>
+        )}
+
         {/* Theme picker */}
         <ThemePicker />
 
@@ -151,6 +172,7 @@ export default function Toolbar() {
       </div>
 
       {showExport && <ExportModal onClose={() => setShowExport(false)} />}
+      {showShare && <ShareModal mapId={currentMapId} onClose={() => setShowShare(false)} />}
     </>
   );
 }

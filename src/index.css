@@ -735,3 +735,280 @@ textarea { resize: vertical; min-height: 80px; }
   from { transform: scale(0.85); opacity: 0; }
   to { transform: scale(1); opacity: 1; }
 }
+
+/* ══════════════════════════════════════════════════
+   Share Modal
+   ══════════════════════════════════════════════════ */
+.share-modal {
+  width: 500px;
+  max-height: 80vh;
+  overflow-y: auto;
+  padding: 0;
+  animation: slideUp 0.25s ease;
+}
+
+/* Search / invite row */
+.share-search-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 16px 24px;
+}
+.share-search-row input {
+  flex: 1;
+  font-size: 13px;
+}
+.share-search-row select {
+  padding: 8px 10px;
+  font-size: 12px;
+  font-family: 'Inter', sans-serif;
+  background: #f8fafc;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-primary);
+  outline: none;
+  cursor: pointer;
+  transition: border-color 0.2s;
+}
+.share-search-row select:focus {
+  border-color: var(--border-focus);
+  box-shadow: 0 0 0 3px var(--accent-glow);
+}
+.share-search-row .btn {
+  padding: 8px 14px;
+  flex-shrink: 0;
+}
+
+/* Dropdown result below search */
+.share-search-result {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  margin: 0 24px 8px;
+  background: var(--bg-card-hover);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: background 0.15s;
+  font-size: 13px;
+  color: var(--text-primary);
+}
+.share-search-result:hover {
+  background: var(--accent-glow);
+}
+.share-search-result .result-email {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-left: auto;
+}
+
+/* Member list */
+.member-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.member-avatar-placeholder {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--accent-glow);
+  color: var(--accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+/* Individual member row */
+.member-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: rgba(0,0,0,0.03);
+  border-radius: 10px;
+  transition: background 0.15s;
+}
+.member-row:hover {
+  background: rgba(0,0,0,0.06);
+}
+.member-row .member-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+.member-row .member-info {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+.member-row .member-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.member-row .member-email {
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.member-row select {
+  padding: 4px 8px;
+  font-size: 11px;
+  font-family: 'Inter', sans-serif;
+  background: #f8fafc;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-primary);
+  outline: none;
+  cursor: pointer;
+  transition: border-color 0.2s;
+  flex-shrink: 0;
+}
+.member-row select:focus {
+  border-color: var(--border-focus);
+}
+.member-row .btn-icon {
+  padding: 4px;
+  border-radius: 6px;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.15s;
+  flex-shrink: 0;
+  font-size: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.member-row .btn-icon:hover {
+  background: rgba(239,68,68,0.1);
+  color: var(--danger);
+}
+.member-row.is-owner .member-name::after {
+  content: ' (eier)';
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
+/* ══════════════════════════════════════════════════
+   Role Badge (toolbar)
+   ══════════════════════════════════════════════════ */
+.role-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 20px;
+  letter-spacing: 0.3px;
+  text-transform: capitalize;
+  white-space: nowrap;
+}
+.role-badge.owner {
+  background: var(--accent-glow);
+  color: var(--accent);
+}
+.role-badge.editor {
+  background: rgba(5,150,105,0.15);
+  color: #059669;
+}
+.role-badge.viewer {
+  background: rgba(217,119,6,0.15);
+  color: #d97706;
+}
+
+/* ══════════════════════════════════════════════════
+   Read-only overlay & restrictions
+   ══════════════════════════════════════════════════ */
+.readonly-banner {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 60;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 16px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #d97706;
+  background: rgba(217,119,6,0.12);
+  border: 1px solid rgba(217,119,6,0.25);
+  border-radius: 20px;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  pointer-events: none;
+  animation: fadeIn 0.3s ease;
+}
+
+.node.readonly {
+  cursor: default;
+  opacity: 0.85;
+}
+.node.readonly:hover {
+  border-color: var(--node-border);
+}
+.node.readonly .node-connect-btn,
+.node.readonly .node-resize {
+  display: none;
+}
+
+/* ══════════════════════════════════════════════════
+   Dashboard – shared maps section
+   ══════════════════════════════════════════════════ */
+.dashboard-section-title {
+  font-size: 14px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--text-muted);
+  margin: 32px 0 16px;
+}
+
+.map-card .shared-by {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.map-card .leave-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  margin-top: 8px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-muted);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.map-card .leave-btn:hover {
+  color: var(--danger);
+  border-color: rgba(239,68,68,0.4);
+  background: rgba(239,68,68,0.08);
+}

@@ -6,6 +6,7 @@ const NODE_TYPES = ["Generell", "Avdeling", "System", "Prosess", "Person", "Mål
 export default function GigaNode({
   node, isSelected, isConnecting, isConnectingFrom,
   onSelect, onOpen, onStartConnect, onFinishConnect, zoom,
+  readOnly = false,
 }) {
   const { updateNode } = useGigaStore();
   const nodeRef = useRef(null);
@@ -23,7 +24,7 @@ export default function GigaNode({
     }
   }, [node.title, editingTitle]);
 
-  // ── Drag ──
+  // ── Drag (disabled for readOnly) ──
   const onMouseDownNode = useCallback((e) => {
     if (e.button !== 0) return;
     if (e.target.classList.contains("node-connect-btn")) return;
@@ -31,7 +32,7 @@ export default function GigaNode({
     if (e.target.classList.contains("node-title") && editingTitle) return;
 
     // If connecting mode, clicking a node finishes the connection
-    if (isConnecting && !isConnectingFrom) {
+    if (isConnecting && !isConnectingFrom && !readOnly) {
       e.stopPropagation();
       onFinishConnect(node.id);
       return;
@@ -39,6 +40,10 @@ export default function GigaNode({
 
     e.stopPropagation();
     onSelect();
+
+    // Don't allow dragging in readOnly mode
+    if (readOnly) return;
+
     dragging.current = true;
     dragStart.current = { mx: e.clientX, my: e.clientY, nx: node.x, ny: node.y };
 
@@ -55,7 +60,7 @@ export default function GigaNode({
     };
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
-  }, [node, zoom, isConnecting, isConnectingFrom, editingTitle, onSelect, onFinishConnect, updateNode]);
+  }, [node, zoom, isConnecting, isConnectingFrom, editingTitle, readOnly, onSelect, onFinishConnect, updateNode]);
 
   // ── Resize ──
   const onResizeMouseDown = useCallback((e) => {
@@ -107,7 +112,7 @@ export default function GigaNode({
   return (
     <div
       ref={nodeRef}
-      className={`node${isSelected ? " selected" : ""}`}
+      className={`node${isSelected ? " selected" : ""}${readOnly ? " readonly" : ""}`}
       style={{
         left: node.x,
         top: node.y,
@@ -133,7 +138,7 @@ export default function GigaNode({
         >
           {node.type || "Generell"}
         </span>
-        {editingTitle ? (
+        {editingTitle && !readOnly ? (
           <input
             className="node-title"
             autoFocus
@@ -146,8 +151,8 @@ export default function GigaNode({
         ) : (
           <span
             className="node-title"
-            onDoubleClick={(e) => { e.stopPropagation(); setEditingTitle(true); }}
-            title="Dobbeltklikk for å redigere tittel"
+            onDoubleClick={(e) => { if (!readOnly) { e.stopPropagation(); setEditingTitle(true); } }}
+            title={readOnly ? node.title : "Dobbeltklikk for å redigere tittel"}
           >
             {node.title || "Uten tittel"}
           </span>
@@ -165,24 +170,28 @@ export default function GigaNode({
 
       {/* Footer */}
       <div className="node-footer">
-        <button
-          className={`node-connect-btn${isConnectingFrom ? " active" : ""}`}
-          onClick={onConnectClick}
-          title={isConnecting ? "Koble til denne noden" : "Start kobling"}
-        >
-          {isConnectingFrom ? "●" : "⊕"}
-        </button>
+        {!readOnly && (
+          <button
+            className={`node-connect-btn${isConnectingFrom ? " active" : ""}`}
+            onClick={onConnectClick}
+            title={isConnecting ? "Koble til denne noden" : "Start kobling"}
+          >
+            {isConnectingFrom ? "●" : "⊕"}
+          </button>
+        )}
         <button className="node-open-btn" onClick={(e) => { e.stopPropagation(); onOpen(); }}>
-          Åpne ↗
+          {readOnly ? "Vis ↗" : "Åpne ↗"}
         </button>
       </div>
 
-      {/* Resize handle */}
-      <div className="node-resize" onMouseDown={onResizeMouseDown}>
-        <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-          <path d="M13 1L1 13M13 8L8 13M13 5L5 13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-        </svg>
-      </div>
+      {/* Resize handle (hidden for readOnly) */}
+      {!readOnly && (
+        <div className="node-resize" onMouseDown={onResizeMouseDown}>
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+            <path d="M13 1L1 13M13 8L8 13M13 5L5 13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+          </svg>
+        </div>
+      )}
     </div>
   );
 }
