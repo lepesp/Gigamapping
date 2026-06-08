@@ -76,28 +76,22 @@ export default function App() {
     };
 
     const unsubMember = onSnapshot(memberQuery, (snap) => {
-      snap.docs.forEach((d) => {
-        mapById.set(d.id, { id: d.id, ...d.data() });
-      });
-      // Remove maps that were removed from member query
       snap.docChanges().forEach((change) => {
         if (change.type === "removed") {
           mapById.delete(change.doc.id);
+        } else {
+          mapById.set(change.doc.id, { id: change.doc.id, ...change.doc.data() });
         }
       });
       updateMaps();
     });
 
     const unsubLegacy = onSnapshot(legacyQuery, (snap) => {
-      snap.docs.forEach((d) => {
-        // Only add if not already tracked by member query
-        if (!mapById.has(d.id)) {
-          mapById.set(d.id, { id: d.id, ...d.data() });
-        }
-      });
       snap.docChanges().forEach((change) => {
-        if (change.type === "removed" && !mapById.get(change.doc.id)?.memberUids) {
+        if (change.type === "removed") {
           mapById.delete(change.doc.id);
+        } else if (!mapById.has(change.doc.id)) {
+          mapById.set(change.doc.id, { id: change.doc.id, ...change.doc.data() });
         }
       });
       updateMaps();
