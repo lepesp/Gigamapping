@@ -57,7 +57,39 @@ export default function Dashboard() {
     });
   };
 
-  const mapIcons = ["🗺", "🏢", "🔗", "📊", "⚙️", "🚀", "💡", "🧩"];
+  const getMapIcon = (title) => {
+    const t = (title || "").toLowerCase();
+    const match = (words) => words.some((w) => t.includes(w));
+
+    if (match(["vaktmester", "vedlikehold", "renhold", "rengjøring"])) return "🔧";
+    if (match(["eiendom", "bolig", "hus", "leilighet", "bygning", "bygg"])) return "🏢";
+    if (match(["drift", "operasjon", "system", "server"])) return "⚙️";
+    if (match(["app", "software", "utvikling", "kode", "dev"])) return "📱";
+    if (match(["økonomi", "budsjett", "regnskap", "finans", "penger"])) return "💰";
+    if (match(["prosjekt", "plan", "strategi", "mål"])) return "📋";
+    if (match(["team", "ansatt", "personal", "hr", "folk"])) return "👥";
+    if (match(["kunde", "klient", "salg", "marked"])) return "🤝";
+    if (match(["design", "ux", "ui", "figma"])) return "🎨";
+    if (match(["data", "analyse", "rapport", "statistikk"])) return "📊";
+    if (match(["sikkerhet", "brann", "hms", "beredskap"])) return "🛡";
+    if (match(["transport", "logistikk", "kjøretøy", "bil", "flåte"])) return "🚛";
+    if (match(["energi", "strøm", "elektro", "kraft"])) return "⚡";
+    if (match(["nett", "web", "side", "nettside", "portal"])) return "🌐";
+    if (match(["lager", "inventar", "beholdning"])) return "📦";
+    if (match(["kalender", "tid", "plan", "booking"])) return "📅";
+    if (match(["dokument", "fil", "arkiv"])) return "📄";
+    if (match(["kart", "map", "giga", "oversikt"])) return "🗺";
+    if (match(["idé", "idea", "brainstorm", "innovasjon"])) return "💡";
+    if (match(["test", "qa", "kvalitet"])) return "✅";
+    if (match(["skole", "utdanning", "kurs", "opplæring"])) return "🎓";
+    if (match(["helse", "lege", "medisin", "sykehus"])) return "🏥";
+    if (match(["mat", "restaurant", "kjøkken", "kantine"])) return "🍽";
+    if (match(["miljø", "grønn", "bærekraft", "klima"])) return "🌿";
+    // Fallback: generate from first letter hash
+    const fallbacks = ["🗺", "📊", "🧩", "🚀", "🎯", "📐", "🔮", "🏗"];
+    const hash = t.split("").reduce((a, c) => a + c.charCodeAt(0), 0);
+    return fallbacks[hash % fallbacks.length];
+  };
 
   // Split maps into owned and shared
   const myMaps = maps.filter((m) => m.ownerId === user.uid);
@@ -81,7 +113,7 @@ export default function Dashboard() {
     return (
       <div key={map.id} className="glass-card map-card" style={{ position: "relative" }}>
         <div onClick={() => openMap(map)} style={{ cursor: "pointer" }}>
-          <div className="map-card-icon">{mapIcons[i % mapIcons.length]}</div>
+          <div className="map-card-icon">{getMapIcon(map.title)}</div>
           <div className="map-card-title">{map.title}</div>
           <div className="map-card-meta">
             Oppdatert {formatDate(map.updatedAt)}
