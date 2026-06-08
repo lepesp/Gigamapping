@@ -93,34 +93,48 @@ export default function ShareModal({ mapId, onClose }) {
                     const link = await createInvite(mapId, inviteRole);
                     if (link) {
                       setInviteLink(link);
-                      await navigator.clipboard.writeText(link);
-                      setInviteCopied(true);
-                      setTimeout(() => setInviteCopied(false), 3000);
+                      setInviteCopied(false);
                     }
                   }}
                   style={{ flex: 1 }}
                 >
-                  {inviteCopied ? "✅ Kopiert!" : "🔗 Lag og kopier lenke"}
+                  {inviteLink ? "🔄 Lag ny lenke" : "🔗 Lag invitasjonslenke"}
                 </button>
               </div>
-              {inviteLink && (
-                <div
-                  style={{
-                    marginTop: 8, padding: "8px 12px", borderRadius: 8,
-                    background: "rgba(99,102,241,0.08)", fontSize: 11,
-                    color: "var(--text-muted)", wordBreak: "break-all",
-                    cursor: "pointer",
-                  }}
-                  onClick={async () => {
-                    await navigator.clipboard.writeText(inviteLink);
-                    setInviteCopied(true);
-                    setTimeout(() => setInviteCopied(false), 2000);
-                  }}
-                  title="Klikk for å kopiere"
-                >
-                  {inviteLink}
-                </div>
-              )}
+              {inviteLink && (() => {
+                const mapTitle = mapData?.title || "Uten tittel";
+                const senderName = user?.displayName || user?.email || "Noen";
+                const roleText = inviteRole === "editor" ? "redigere (les og skriv)" : "se på (kun les)";
+                const message = `Hei! 👋\n\n${senderName} har invitert deg til å samarbeide på Gigamapping-kartet «${mapTitle}».\n\nDu har fått tilgang til å ${roleText}.\n\nKlikk lenken under for å åpne kartet:\n${inviteLink}\n\nHvis du ikke har en konto ennå:\n1. Klikk lenken over\n2. Velg «Registrer deg» og opprett en konto med e-post og passord (eller bruk Google)\n3. Du får automatisk tilgang til kartet\n\nVelkommen! 🗺`;
+
+                return (
+                  <div style={{ marginTop: 12 }}>
+                    <div
+                      style={{
+                        padding: "12px 14px", borderRadius: 10,
+                        background: "rgba(99,102,241,0.06)",
+                        border: "1px solid rgba(99,102,241,0.15)",
+                        fontSize: 12, color: "var(--text-primary)",
+                        whiteSpace: "pre-wrap", lineHeight: 1.6,
+                        maxHeight: 200, overflowY: "auto",
+                      }}
+                    >
+                      {message}
+                    </div>
+                    <button
+                      className="btn btn-primary"
+                      style={{ marginTop: 8, width: "100%", fontSize: 13 }}
+                      onClick={async () => {
+                        await navigator.clipboard.writeText(message);
+                        setInviteCopied(true);
+                        setTimeout(() => setInviteCopied(false), 3000);
+                      }}
+                    >
+                      {inviteCopied ? "✅ Melding kopiert!" : "📋 Kopier melding"}
+                    </button>
+                  </div>
+                );
+              })()}
             </div>
           )}
 
