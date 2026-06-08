@@ -213,13 +213,13 @@ export default function Dashboard() {
                 onChange={(e) => { setNewName(e.target.value); setSelectedIcon(getMapIcon(e.target.value)); }}
                 onKeyDown={(e) => { if (e.key === "Enter") createMap(); if (e.key === "Escape") setCreating(false); }}
               />
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 4, maxHeight: 72, overflowY: "auto" }}>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, maxHeight: 160, overflowY: "auto", padding: 4 }}>
                 {iconOptions.map((icon) => (
                   <button
                     key={icon}
                     onClick={() => setSelectedIcon(icon)}
                     style={{
-                      fontSize: 18, padding: "3px 5px", borderRadius: 8, cursor: "pointer",
+                      fontSize: 26, padding: "6px 8px", borderRadius: 10, cursor: "pointer",
                       border: selectedIcon === icon ? "2px solid var(--accent)" : "2px solid transparent",
                       background: selectedIcon === icon ? "var(--accent-glow)" : "transparent",
                       lineHeight: 1, transition: "all 0.15s",
