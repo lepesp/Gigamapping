@@ -12,6 +12,9 @@ import {
   getDocs,
   arrayUnion,
   arrayRemove,
+  orderBy,
+  limit,
+  setDoc,
 } from "firebase/firestore";
 import { db } from "../firebase";
 
@@ -39,6 +42,24 @@ const useGigaStore = create((set, get) => ({
   // Connections
   connections: [],
   setConnections: (connections) => set({ connections }),
+
+  // Presence & Chat
+  onlineUsers: [],
+  chatMessages: [],
+  unsubscribePresence: null,
+  unsubscribeChat: null,
+  heartbeatInterval: null,
+
+  sendChatMessage: async (text) => {
+    const { user, currentMapId } = get();
+    if (!user || !currentMapId || !text.trim()) return;
+    await addDoc(collection(db, "maps", currentMapId, "chat"), {
+      text: text.trim(),
+      userId: user.uid,
+      displayName: user.displayName || user.email || "",
+      createdAt: serverTimestamp(),
+    });
+  },
 
   // UI State
   selectedNodeId: null,
@@ -284,21 +305,74 @@ const useGigaStore = create((set, get) => ({
       }
     );
 
+    // Subscribe to presence
+    const presenceRef = collection(db, "maps", mapId, "presence");
+    const unsubPresence = onSnapshot(presenceRef, (snap) => {
+      const now = Date.now();
+      const online = snap.docs
+        .map((d) => ({ uid: d.id, ...d.data() }))
+        .filter((u) => u.lastSeen && (now - u.lastSeen.toMillis()) < 90000);
+      set({ onlineUsers: online });
+    });
+
+    // Subscribe to chat (last 100 messages)
+    const chatQuery = query(
+      collection(db, "maps", mapId, "chat"),
+      orderBy("createdAt", "asc"),
+      limit(100)
+    );
+    const unsubChat = onSnapshot(chatQuery, (snap) => {
+      const messages = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      set({ chatMessages: messages });
+    });
+
+    // Start presence heartbeat
+    const writePresence = async () => {
+      if (!user) return;
+      try {
+        await setDoc(doc(db, "maps", mapId, "presence", user.uid), {
+          displayName: user.displayName || user.email || "",
+          photoURL: user.photoURL || "",
+          email: (user.email || "").toLowerCase(),
+          lastSeen: serverTimestamp(),
+        });
+      } catch (e) { /* ignore */ }
+    };
+    writePresence();
+    const heartbeatInterval = setInterval(writePresence, 30000);
+
     set({
       currentMapId: mapId,
       unsubscribeNodes: unsubNodes,
       unsubscribeConnections: unsubConns,
       unsubscribeIdeas: unsubIdeas,
       unsubscribeMapDoc: unsubMap,
+      unsubscribePresence: unsubPresence,
+      unsubscribeChat: unsubChat,
+      heartbeatInterval,
     });
   },
 
   unsubscribeAll: () => {
-    const { unsubscribeNodes, unsubscribeConnections, unsubscribeIdeas, unsubscribeMapDoc } = get();
+    const {
+      unsubscribeNodes, unsubscribeConnections, unsubscribeIdeas, unsubscribeMapDoc,
+      unsubscribePresence, unsubscribeChat, heartbeatInterval, user, currentMapId,
+    } = get();
     if (unsubscribeNodes) unsubscribeNodes();
     if (unsubscribeConnections) unsubscribeConnections();
     if (unsubscribeIdeas) unsubscribeIdeas();
     if (unsubscribeMapDoc) unsubscribeMapDoc();
+    if (unsubscribePresence) unsubscribePresence();
+    if (unsubscribeChat) unsubscribeChat();
+    if (heartbeatInterval) clearInterval(heartbeatInterval);
+    // Remove presence on leave
+    if (user && currentMapId) {
+      deleteDoc(doc(db, "maps", currentMapId, "presence", user.uid)).catch(() => {});
+    }
+    set({
+      onlineUsers: [], chatMessages: [],
+      unsubscribePresence: null, unsubscribeChat: null, heartbeatInterval: null,
+    });
   },
 
   // --- Invite links ---

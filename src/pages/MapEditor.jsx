@@ -7,6 +7,7 @@ import MiniMap from "../components/MiniMap";
 import NodeModal from "../components/NodeModal";
 import ContextMenu from "../components/ContextMenu";
 import IdeaPanel from "../components/IdeaPanel";
+import PresenceChat from "../components/PresenceChat";
 
 export default function MapEditor() {
   const {
@@ -228,6 +229,9 @@ export default function MapEditor() {
 
         {/* Idea brainstorm panel — hidden for viewers */}
         {!isViewer && <IdeaPanel pan={pan} zoom={zoom} canvasRef={canvasRef} />}
+
+        {/* Live chat panel (left side) */}
+        <PresenceChat />
 
         {/* Read-only banner for viewers */}
         {isViewer && (

@@ -113,6 +113,24 @@ service cloud.firestore {
         allow update: if isSignedIn() && canEdit(mapId);
         allow delete: if isSignedIn() && canEdit(mapId);
       }
+
+
+      // ─── Presence subcollection ─────────────────────────
+      match /presence/{presenceUid} {
+        // Any member can read presence
+        allow read: if isSignedIn() && isMember(mapId);
+        // Users can only write/delete their own presence
+        allow write: if isSignedIn() && uid() == presenceUid && isMember(mapId);
+      }
+
+
+      // ─── Chat subcollection ─────────────────────────────
+      match /chat/{msgId} {
+        // Any member can read chat
+        allow read: if isSignedIn() && isMember(mapId);
+        // Any member can send messages
+        allow create: if isSignedIn() && isMember(mapId);
+      }
     }
 
 
