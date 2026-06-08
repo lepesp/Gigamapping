@@ -36,7 +36,7 @@ export default function IdeaPanel({ pan, zoom, canvasRef }) {
         position: "absolute",
         top: 20,
         right: 20,
-        bottom: 170,
+        ...(collapsed ? {} : { bottom: 170 }),
         width: 220,
         display: collapsed ? "block" : "flex",
         flexDirection: "column",
