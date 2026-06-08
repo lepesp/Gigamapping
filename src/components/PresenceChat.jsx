@@ -29,13 +29,14 @@ export default function PresenceChat() {
   const [input, setInput] = useState("");
   const [hasUnread, setHasUnread] = useState(false);
 
-  const messagesEndRef = useRef(null);
+  const messagesContainerRef = useRef(null);
   const prevMessageCount = useRef(chatMessages.length);
 
-  // Auto-scroll to bottom on new messages
+  // Auto-scroll to bottom on new messages (only within chat container)
   useEffect(() => {
-    if (!collapsed && messagesEndRef.current) {
-      messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
+    if (!collapsed && messagesContainerRef.current) {
+      const el = messagesContainerRef.current;
+      el.scrollTop = el.scrollHeight;
     }
     // Track unread when collapsed
     if (collapsed && chatMessages.length > prevMessageCount.current) {
@@ -210,6 +211,7 @@ export default function PresenceChat() {
 
           {/* Chat messages */}
           <div
+            ref={messagesContainerRef}
             style={{
               flex: 1,
               overflowY: "auto",
@@ -278,7 +280,6 @@ export default function PresenceChat() {
                 </div>
               );
             })}
-            <div ref={messagesEndRef} />
           </div>
 
           {/* Input */}
