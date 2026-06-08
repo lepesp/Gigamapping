@@ -1012,3 +1012,73 @@ textarea { resize: vertical; min-height: 80px; }
   border-color: rgba(239,68,68,0.4);
   background: rgba(239,68,68,0.08);
 }
+
+/* ══════════════════════════════════════════════════
+   Auth Form (email/password)
+   ══════════════════════════════════════════════════ */
+.auth-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 20px 0;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.auth-divider::before,
+.auth-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.auth-form input {
+  padding: 10px 14px;
+  font-size: 14px;
+  font-family: 'Inter', sans-serif;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.auth-form input:focus {
+  border-color: var(--border-focus);
+  box-shadow: 0 0 0 3px var(--accent-glow);
+}
+.auth-form input::placeholder {
+  color: var(--text-muted);
+}
+
+.auth-submit-btn {
+  padding: 11px 16px !important;
+  font-size: 14px !important;
+  font-weight: 600;
+  margin-top: 4px;
+}
+
+.auth-toggle {
+  margin-top: 16px;
+  font-size: 13px;
+  color: var(--text-muted);
+  text-align: center;
+}
+.auth-toggle button {
+  background: none;
+  border: none;
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0;
+  font-family: inherit;
+}
+.auth-toggle button:hover {
+  text-decoration: underline;
+}

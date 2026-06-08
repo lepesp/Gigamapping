@@ -11,6 +11,7 @@ export default function ShareModal({ mapId, onClose }) {
   const {
     user, currentMapData, maps,
     addMember, removeMember, updateMemberRole, transferOwnership, searchUsers,
+    createInvite,
   } = useGigaStore();
 
   // Use currentMapData if it matches, otherwise find from maps list
@@ -28,6 +29,9 @@ export default function ShareModal({ mapId, onClose }) {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const searchTimeout = useRef(null);
+  const [inviteRole, setInviteRole] = useState("editor");
+  const [inviteLink, setInviteLink] = useState("");
+  const [inviteCopied, setInviteCopied] = useState(false);
 
   // Lazy migration: add owner to members if this is a legacy map
   useEffect(() => {
@@ -144,6 +148,58 @@ export default function ShareModal({ mapId, onClose }) {
         </div>
 
         <div className="modal-body">
+          {/* Invite link section */}
+          {isOwner && (
+            <div className="modal-section">
+              <label>📨 Invitasjonslenke</label>
+              <p style={{ fontSize: 12, color: "var(--text-muted)", margin: "4px 0 10px" }}>
+                Generer en lenke du kan sende til hvem som helst
+              </p>
+              <div className="share-search-row">
+                <select
+                  value={inviteRole}
+                  onChange={(e) => { setInviteRole(e.target.value); setInviteLink(""); setInviteCopied(false); }}
+                >
+                  <option value="editor">Les og skriv</option>
+                  <option value="viewer">Kun les</option>
+                </select>
+                <button
+                  className="btn btn-primary"
+                  onClick={async () => {
+                    const link = await createInvite(mapId, inviteRole);
+                    if (link) {
+                      setInviteLink(link);
+                      await navigator.clipboard.writeText(link);
+                      setInviteCopied(true);
+                      setTimeout(() => setInviteCopied(false), 3000);
+                    }
+                  }}
+                  style={{ flex: 1 }}
+                >
+                  {inviteCopied ? "✅ Kopiert!" : "🔗 Lag og kopier lenke"}
+                </button>
+              </div>
+              {inviteLink && (
+                <div
+                  style={{
+                    marginTop: 8, padding: "8px 12px", borderRadius: 8,
+                    background: "rgba(99,102,241,0.08)", fontSize: 11,
+                    color: "var(--text-muted)", wordBreak: "break-all",
+                    cursor: "pointer",
+                  }}
+                  onClick={async () => {
+                    await navigator.clipboard.writeText(inviteLink);
+                    setInviteCopied(true);
+                    setTimeout(() => setInviteCopied(false), 2000);
+                  }}
+                  title="Klikk for å kopiere"
+                >
+                  {inviteLink}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Search & Add */}
           {isOwner && (
             <div className="modal-section">

@@ -1,9 +1,19 @@
 import { useState } from "react";
-import { signInWithPopup } from "firebase/auth";
+import {
+  signInWithPopup,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  updateProfile,
+} from "firebase/auth";
 import { auth, googleProvider } from "../firebase";
 
 export default function AuthPage() {
+  const [mode, setMode] = useState("login"); // 'login' | 'register'
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [displayName, setDisplayName] = useState("");
   const [error, setError] = useState(null);
+  const [loading, setLoading] = useState(false);
 
   const handleGoogleLogin = async () => {
     setError(null);
@@ -11,8 +21,46 @@ export default function AuthPage() {
       await signInWithPopup(auth, googleProvider);
     } catch (err) {
       console.error("Login failed:", err);
-      setError(`${err.code}: ${err.message}`);
+      setError(formatError(err.code));
     }
+  };
+
+  const handleEmailSubmit = async (e) => {
+    e.preventDefault();
+    setError(null);
+    setLoading(true);
+
+    try {
+      if (mode === "register") {
+        if (!displayName.trim()) {
+          setError("Skriv inn navnet ditt");
+          setLoading(false);
+          return;
+        }
+        const cred = await createUserWithEmailAndPassword(auth, email, password);
+        await updateProfile(cred.user, { displayName: displayName.trim() });
+      } else {
+        await signInWithEmailAndPassword(auth, email, password);
+      }
+    } catch (err) {
+      console.error("Auth failed:", err);
+      setError(formatError(err.code));
+    }
+    setLoading(false);
+  };
+
+  const formatError = (code) => {
+    const errors = {
+      "auth/email-already-in-use": "Denne e-postadressen er allerede registrert. Prøv å logge inn.",
+      "auth/invalid-email": "Ugyldig e-postadresse.",
+      "auth/weak-password": "Passordet må være minst 6 tegn.",
+      "auth/user-not-found": "Fant ingen bruker med denne e-postadressen.",
+      "auth/wrong-password": "Feil passord.",
+      "auth/invalid-credential": "Feil e-post eller passord.",
+      "auth/too-many-requests": "For mange forsøk. Prøv igjen om litt.",
+      "auth/popup-closed-by-user": "Innloggingsvinduet ble lukket.",
+    };
+    return errors[code] || `Noe gikk galt (${code})`;
   };
 
   return (
@@ -32,6 +80,7 @@ export default function AuthPage() {
           </div>
         </div>
 
+        {/* Google login */}
         <button className="btn auth-google-btn" onClick={handleGoogleLogin}>
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
             <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
@@ -41,6 +90,53 @@ export default function AuthPage() {
           </svg>
           Logg inn med Google
         </button>
+
+        {/* Divider */}
+        <div className="auth-divider">
+          <span>eller</span>
+        </div>
+
+        {/* Email/Password form */}
+        <form onSubmit={handleEmailSubmit} className="auth-form">
+          {mode === "register" && (
+            <input
+              type="text"
+              placeholder="Ditt navn"
+              value={displayName}
+              onChange={(e) => setDisplayName(e.target.value)}
+              autoComplete="name"
+            />
+          )}
+          <input
+            type="email"
+            placeholder="E-postadresse"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            autoComplete="email"
+            required
+          />
+          <input
+            type="password"
+            placeholder="Passord"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            autoComplete={mode === "register" ? "new-password" : "current-password"}
+            required
+            minLength={6}
+          />
+          <button type="submit" className="btn btn-primary auth-submit-btn" disabled={loading}>
+            {loading ? "..." : mode === "register" ? "Opprett konto" : "Logg inn"}
+          </button>
+        </form>
+
+        {/* Toggle mode */}
+        <p className="auth-toggle">
+          {mode === "login" ? (
+            <>Har du ikke konto? <button onClick={() => { setMode("register"); setError(null); }}>Registrer deg</button></>
+          ) : (
+            <>Har du allerede konto? <button onClick={() => { setMode("login"); setError(null); }}>Logg inn</button></>
+          )}
+        </p>
 
         {error && (
           <div style={{

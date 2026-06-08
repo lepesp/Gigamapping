@@ -13,11 +13,18 @@ import MapEditor from "./pages/MapEditor";
 import "./index.css";
 
 export default function App() {
-  const { user, setUser, currentMapId, maps, setMaps } = useGigaStore();
+  const { user, setUser, currentMapId, maps, setMaps, pendingInvite, setPendingInvite, redeemInvite } = useGigaStore();
 
-  // Load saved theme on mount
+  // Load saved theme on mount + check for invite token in URL
   useEffect(() => {
     applyTheme(getSavedTheme());
+
+    // Check URL for invite token
+    const params = new URLSearchParams(window.location.search);
+    const inviteToken = params.get("invite");
+    if (inviteToken) {
+      setPendingInvite(inviteToken);
+    }
   }, []);
 
   // Auth listener + save user profile to Firestore
@@ -99,6 +106,18 @@ export default function App() {
       unsubLegacy();
     };
   }, [user]);
+
+  // Redeem pending invite after login
+  useEffect(() => {
+    if (user && pendingInvite) {
+      redeemInvite(pendingInvite).then((success) => {
+        if (!success) {
+          console.warn("Failed to redeem invite");
+          setPendingInvite(null);
+        }
+      });
+    }
+  }, [user, pendingInvite]);
 
   if (!user) return <AuthPage />;
   if (currentMapId) return <MapEditor />;

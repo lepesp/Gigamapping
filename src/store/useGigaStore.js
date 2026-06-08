@@ -301,6 +301,48 @@ const useGigaStore = create((set, get) => ({
     if (unsubscribeMapDoc) unsubscribeMapDoc();
   },
 
+  // --- Invite links ---
+  pendingInvite: null, // { mapId, role, token } — set before auth, redeemed after
+  setPendingInvite: (invite) => set({ pendingInvite: invite }),
+
+  createInvite: async (mapId, role) => {
+    const { user } = get();
+    if (!user) return null;
+    const token = crypto.randomUUID();
+    await addDoc(collection(db, "invites"), {
+      token,
+      mapId,
+      role,
+      createdBy: user.uid,
+      createdAt: serverTimestamp(),
+    });
+    return `${window.location.origin}${window.location.pathname}?invite=${token}`;
+  },
+
+  redeemInvite: async (token) => {
+    const { user, addMember, subscribeToMap } = get();
+    if (!user || !token) return false;
+    // Look up invite
+    const q = query(collection(db, "invites"), where("token", "==", token));
+    const snap = await getDocs(q);
+    if (snap.empty) return false;
+    const invite = snap.docs[0].data();
+    // Add user as member
+    await addMember(
+      invite.mapId,
+      user.uid,
+      invite.role,
+      (user.email || "").toLowerCase(),
+      user.displayName || user.email || "",
+    );
+    // Navigate to the map
+    subscribeToMap(invite.mapId);
+    set({ pendingInvite: null });
+    // Clean URL
+    window.history.replaceState({}, "", window.location.pathname);
+    return true;
+  },
+
   // History (undo/redo) - basic snapshot
   history: [],
   historyIndex: -1,

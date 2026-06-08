@@ -116,6 +116,15 @@ service cloud.firestore {
     }
 
 
+    // ─── Invites ──────────────────────────────────────────
+    match /invites/{inviteId} {
+      // Any authenticated user can read invites (to redeem them)
+      allow read: if isSignedIn();
+      // Any authenticated user can create invites (ownership checked client-side)
+      allow create: if isSignedIn();
+    }
+
+
     // ─── Deny everything else ─────────────────────────────
     // Any path not explicitly matched above is denied by default.
   }
