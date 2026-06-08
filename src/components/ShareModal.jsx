@@ -29,6 +29,19 @@ export default function ShareModal({ mapId, onClose }) {
   const [success, setSuccess] = useState("");
   const searchTimeout = useRef(null);
 
+  // Lazy migration: add owner to members if this is a legacy map
+  useEffect(() => {
+    if (mapData && isOwner && (!mapData.members || !mapData.members[user.uid])) {
+      addMember(
+        mapId,
+        user.uid,
+        "owner",
+        (user.email || "").toLowerCase(),
+        user.displayName || user.email || "",
+      );
+    }
+  }, [mapId]);
+
   // Debounced search
   useEffect(() => {
     if (searchTimeout.current) clearTimeout(searchTimeout.current);
