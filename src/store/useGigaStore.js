@@ -267,14 +267,24 @@ const useGigaStore = create((set, get) => ({
     // Listen to the map document for membership/role changes
     const unsubMap = onSnapshot(
       doc(db, "maps", mapId),
-      (snap) => {
+      async (snap) => {
         if (!snap.exists()) {
           // Map was deleted or user lost access
           set({ currentMapId: null, currentMapData: null, userRole: null });
           return;
         }
         const data = { id: snap.id, ...snap.data() };
-        const role = data.members?.[user?.uid]?.role || (data.ownerId === user?.uid ? "owner" : null);
+        let role = data.members?.[user?.uid]?.role || (data.ownerId === user?.uid ? "owner" : null);
+
+        // Auto-repair: if user is ownerId but members says something else, fix it
+        if (data.ownerId === user?.uid && role !== "owner") {
+          try {
+            const { addMember } = get();
+            await addMember(mapId, user.uid, "owner", (user.email || "").toLowerCase(), user.displayName || user.email || "");
+            role = "owner";
+          } catch (e) { /* ignore */ }
+        }
+
         set({ currentMapData: data, userRole: role });
       }
     );
