@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import useGigaStore from "../store/useGigaStore";
 
 const ROLE_LABELS = {
@@ -10,7 +10,7 @@ const ROLE_LABELS = {
 export default function ShareModal({ mapId, onClose }) {
   const {
     user, currentMapData, maps,
-    addMember, removeMember, updateMemberRole, transferOwnership, searchUsers,
+    addMember, removeMember, updateMemberRole, transferOwnership,
     createInvite,
   } = useGigaStore();
 
@@ -22,13 +22,6 @@ export default function ShareModal({ mapId, onClose }) {
   const members = mapData?.members || {};
   const isOwner = members[user?.uid]?.role === "owner" || mapData?.ownerId === user?.uid;
 
-  const [emailInput, setEmailInput] = useState("");
-  const [selectedRole, setSelectedRole] = useState("editor");
-  const [searchResults, setSearchResults] = useState([]);
-  const [searching, setSearching] = useState(false);
-  const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
-  const searchTimeout = useRef(null);
   const [inviteRole, setInviteRole] = useState("editor");
   const [inviteLink, setInviteLink] = useState("");
   const [inviteCopied, setInviteCopied] = useState(false);
@@ -45,75 +38,6 @@ export default function ShareModal({ mapId, onClose }) {
       );
     }
   }, [mapId]);
-
-  // Debounced search
-  useEffect(() => {
-    if (searchTimeout.current) clearTimeout(searchTimeout.current);
-    setSearchResults([]);
-    setError("");
-
-    if (emailInput.length < 3) return;
-
-    searchTimeout.current = setTimeout(async () => {
-      setSearching(true);
-      try {
-        const results = await searchUsers(emailInput.trim().toLowerCase());
-        // Filter out users already in the map
-        const filtered = results.filter((u) => !members[u.id]);
-        setSearchResults(filtered);
-      } catch (err) {
-        console.error("Search failed:", err);
-      }
-      setSearching(false);
-    }, 400);
-
-    return () => {
-      if (searchTimeout.current) clearTimeout(searchTimeout.current);
-    };
-  }, [emailInput]);
-
-  const handleAddUser = async (foundUser) => {
-    setError("");
-    setSuccess("");
-    try {
-      await addMember(
-        mapId,
-        foundUser.id,
-        selectedRole,
-        foundUser.email,
-        foundUser.displayName || foundUser.email,
-      );
-      setSuccess(`${foundUser.displayName || foundUser.email} lagt til som ${ROLE_LABELS[selectedRole]}`);
-      setEmailInput("");
-      setSearchResults([]);
-      setTimeout(() => setSuccess(""), 3000);
-    } catch (err) {
-      console.error("Add member failed:", err);
-      setError(`Kunne ikke legge til: ${err.message}`);
-    }
-  };
-
-  const handleAddByEmail = async () => {
-    if (!emailInput.trim()) return;
-    setError("");
-    setSearching(true);
-    try {
-      const results = await searchUsers(emailInput.trim().toLowerCase());
-      if (results.length === 0) {
-        setError("Fant ingen bruker med denne e-postadressen. Brukeren må ha logget inn i appen minst én gang.");
-      } else {
-        const foundUser = results[0];
-        if (members[foundUser.id]) {
-          setError("Denne brukeren er allerede lagt til.");
-        } else {
-          await handleAddUser(foundUser);
-        }
-      }
-    } catch (err) {
-      setError(`Feil: ${err.message}`);
-    }
-    setSearching(false);
-  };
 
   const handleRoleChange = async (uid, newRole) => {
     if (newRole === "owner") {
@@ -200,78 +124,7 @@ export default function ShareModal({ mapId, onClose }) {
             </div>
           )}
 
-          {/* Search & Add */}
-          {isOwner && (
-            <div className="modal-section">
-              <label>Legg til bruker</label>
-              <div className="share-search-row">
-                <input
-                  value={emailInput}
-                  onChange={(e) => setEmailInput(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === "Enter") handleAddByEmail(); }}
-                  placeholder="Skriv e-postadresse..."
-                />
-                <select
-                  value={selectedRole}
-                  onChange={(e) => setSelectedRole(e.target.value)}
-                >
-                  <option value="editor">Les og skriv</option>
-                  <option value="viewer">Kun les</option>
-                </select>
-                <button
-                  className="btn btn-primary"
-                  onClick={handleAddByEmail}
-                  disabled={searching || !emailInput.trim()}
-                >
-                  {searching ? "..." : "Legg til"}
-                </button>
-              </div>
 
-              {/* Search results dropdown */}
-              {searchResults.length > 0 && (
-                <div style={{ marginTop: 4 }}>
-                  {searchResults.map((u) => (
-                    <div
-                      key={u.id}
-                      className="share-search-result"
-                      onClick={() => handleAddUser(u)}
-                    >
-                      {u.photoURL && (
-                        <img
-                          src={u.photoURL}
-                          alt=""
-                          style={{ width: 24, height: 24, borderRadius: "50%", marginRight: 8 }}
-                        />
-                      )}
-                      <span style={{ flex: 1 }}>
-                        <strong>{u.displayName || u.email}</strong>
-                        {u.displayName && (
-                          <span style={{ color: "var(--text-muted)", marginLeft: 6, fontSize: 12 }}>{u.email}</span>
-                        )}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {error && (
-                <div style={{
-                  marginTop: 8, padding: "8px 12px", borderRadius: 8,
-                  background: "rgba(239,68,68,0.12)", color: "#f87171", fontSize: 12,
-                }}>
-                  ⚠️ {error}
-                </div>
-              )}
-              {success && (
-                <div style={{
-                  marginTop: 8, padding: "8px 12px", borderRadius: 8,
-                  background: "rgba(16,185,129,0.12)", color: "#10b981", fontSize: 12,
-                }}>
-                  ✅ {success}
-                </div>
-              )}
-            </div>
-          )}
 
           {/* Members list */}
           <div className="modal-section">
