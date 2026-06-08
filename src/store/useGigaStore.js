@@ -321,7 +321,13 @@ const useGigaStore = create((set, get) => ({
       const now = Date.now();
       const online = snap.docs
         .map((d) => ({ uid: d.id, ...d.data() }))
-        .filter((u) => u.lastSeen && (now - u.lastSeen.toMillis()) < 90000);
+        .filter((u) => {
+          // Always include current user (they're obviously online)
+          if (u.uid === user?.uid) return true;
+          // For others, check lastSeen within 90 seconds
+          if (!u.lastSeen || typeof u.lastSeen.toMillis !== "function") return false;
+          return (now - u.lastSeen.toMillis()) < 90000;
+        });
       // Only update state if the online users list actually changed
       const prev = get().onlineUsers;
       const prevUids = prev.map((u) => u.uid).sort().join(",");
