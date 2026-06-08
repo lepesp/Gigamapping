@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, lazy, Suspense } from "react";
 import { onAuthStateChanged } from "firebase/auth";
 import {
   collection, onSnapshot, query, where,
@@ -7,10 +7,12 @@ import {
 import { auth, db } from "./firebase";
 import useGigaStore from "./store/useGigaStore";
 import { applyTheme, getSavedTheme } from "./themes";
-import AuthPage from "./pages/AuthPage";
-import Dashboard from "./pages/Dashboard";
-import MapEditor from "./pages/MapEditor";
 import "./index.css";
+
+// Lazy-load pages for code splitting
+const AuthPage = lazy(() => import("./pages/AuthPage"));
+const Dashboard = lazy(() => import("./pages/Dashboard"));
+const MapEditor = lazy(() => import("./pages/MapEditor"));
 
 export default function App() {
   const { user, setUser, currentMapId, maps, setMaps, pendingInvite, setPendingInvite, redeemInvite } = useGigaStore();
@@ -119,7 +121,19 @@ export default function App() {
     }
   }, [user, pendingInvite]);
 
-  if (!user) return <AuthPage />;
-  if (currentMapId) return <MapEditor />;
-  return <Dashboard />;
+  const page = !user ? <AuthPage /> : currentMapId ? <MapEditor /> : <Dashboard />;
+
+  return (
+    <Suspense fallback={
+      <div style={{
+        display: "flex", alignItems: "center", justifyContent: "center",
+        height: "100vh", color: "var(--text-muted)", fontSize: 14,
+        fontFamily: "Outfit, sans-serif",
+      }}>
+        Laster...
+      </div>
+    }>
+      {page}
+    </Suspense>
+  );
 }
