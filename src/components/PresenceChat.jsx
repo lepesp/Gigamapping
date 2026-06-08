@@ -64,8 +64,8 @@ export default function PresenceChat() {
     }
   };
 
-  // Only show if 2+ online users OR there are chat messages
-  if (onlineUsers.length < 2 && chatMessages.length === 0) return null;
+  // Always show the chat panel
+  // (previously hidden when alone, but users want to see it)
 
   return (
     <div
