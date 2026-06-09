@@ -52,6 +52,14 @@ export default function App() {
     const inviteToken = params.get("invite");
     if (inviteToken) {
       setPendingInvite(inviteToken);
+      // Save to localStorage so it survives Google auth redirect
+      localStorage.setItem("pendingInvite", inviteToken);
+    } else {
+      // Restore from localStorage (e.g. after Google redirect)
+      const saved = localStorage.getItem("pendingInvite");
+      if (saved) {
+        setPendingInvite(saved);
+      }
     }
   }, []);
 
@@ -133,6 +141,7 @@ export default function App() {
   useEffect(() => {
     if (user && pendingInvite) {
       redeemInvite(pendingInvite).then((success) => {
+        localStorage.removeItem("pendingInvite");
         if (!success) {
           console.warn("Failed to redeem invite");
           setPendingInvite(null);

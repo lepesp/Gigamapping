@@ -67,6 +67,7 @@ service cloud.firestore {
 
       // Owners can update anything on the map (including members)
       // Editors can ONLY update the 'updatedAt' field — nothing else
+      // Invite redemption: users can add themselves as a member
       allow update: if isSignedIn()
                     && (
                       // Owner — full update access
@@ -77,6 +78,14 @@ service cloud.firestore {
                         hasRole(mapId, 'editor')
                         && request.resource.data.diff(resource.data).affectedKeys()
                             .hasOnly(['updatedAt'])
+                      )
+
+                      // Invite redemption — user can add themselves as member
+                      // Only allows changes to: members.{uid}, memberUids, updatedAt
+                      || (
+                        request.resource.data.diff(resource.data).affectedKeys()
+                            .hasOnly(['members', 'memberUids', 'updatedAt'])
+                        && request.resource.data.ownerId == resource.data.ownerId
                       )
                     );
 
