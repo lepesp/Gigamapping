@@ -10,6 +10,7 @@ import {
   query,
   where,
   getDocs,
+  getDoc,
   arrayUnion,
   arrayRemove,
   orderBy,
@@ -257,12 +258,27 @@ const useGigaStore = create((set, get) => ({
   unsubscribeIdeas: null,
   unsubscribeMapDoc: null,
 
-  subscribeToMap: (mapId) => {
+  subscribeToMap: async (mapId) => {
     const { unsubscribeNodes, unsubscribeConnections, unsubscribeIdeas, unsubscribeMapDoc, user } = get();
     if (unsubscribeNodes) unsubscribeNodes();
     if (unsubscribeConnections) unsubscribeConnections();
     if (unsubscribeIdeas) unsubscribeIdeas();
     if (unsubscribeMapDoc) unsubscribeMapDoc();
+
+    // Pre-flight: migrate legacy maps before setting up listeners
+    // This ensures memberUids exists so Firestore rules don't block subcollections
+    try {
+      const mapSnap = await getDoc(doc(db, "maps", mapId));
+      if (mapSnap.exists()) {
+        const data = mapSnap.data();
+        const needsMigration = data.ownerId === user?.uid && 
+          (!data.memberUids || !data.memberUids.includes(user.uid));
+        if (needsMigration) {
+          const { addMember } = get();
+          await addMember(mapId, user.uid, "owner", (user.email || "").toLowerCase(), user.displayName || user.email || "");
+        }
+      }
+    } catch (e) { /* ignore migration errors */ }
 
     // Listen to the map document for membership/role changes
     const unsubMap = onSnapshot(
