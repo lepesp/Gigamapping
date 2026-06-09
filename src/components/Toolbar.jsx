@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { signOut } from "firebase/auth";
 import { doc, updateDoc, serverTimestamp } from "firebase/firestore";
 import { auth, db } from "../firebase";
@@ -20,17 +20,31 @@ export default function Toolbar() {
   const currentMap = maps.find((m) => m.id === currentMapId);
   const [showExport, setShowExport] = useState(false);
   const [showShare, setShowShare] = useState(false);
-  const [savingTitle, setSavingTitle] = useState(false);
   const [title, setTitle] = useState(currentMap?.title || "");
+  const [isEditing, setIsEditing] = useState(false);
   const isViewer = userRole === "viewer";
   const isOwner = userRole === "owner";
 
+  // Keep title in sync with Firestore (but not while user is editing)
+  useEffect(() => {
+    if (!isEditing && currentMap?.title) {
+      setTitle(currentMap.title);
+    }
+  }, [currentMap?.title, isEditing]);
+
   const saveTitle = async () => {
-    if (!currentMapId || !title.trim()) return;
-    await updateDoc(doc(db, "maps", currentMapId), {
-      title: title.trim(),
-      updatedAt: serverTimestamp(),
-    });
+    setIsEditing(false);
+    if (!currentMapId || !title.trim() || title.trim() === currentMap?.title) return;
+    try {
+      await updateDoc(doc(db, "maps", currentMapId), {
+        title: title.trim(),
+        updatedAt: serverTimestamp(),
+      });
+    } catch (err) {
+      console.error("Failed to save title:", err);
+      // Revert on error
+      setTitle(currentMap?.title || "");
+    }
   };
 
   const goToDashboard = () => {
@@ -83,11 +97,13 @@ export default function Toolbar() {
         {/* Map title */}
         <input
           className="toolbar-map-name"
-          value={title || currentMap?.title || ""}
+          value={title}
           onChange={(e) => setTitle(e.target.value)}
+          onFocus={() => setIsEditing(true)}
           onBlur={saveTitle}
-          onKeyDown={(e) => e.key === "Enter" && saveTitle()}
+          onKeyDown={(e) => { if (e.key === "Enter") { e.target.blur(); } }}
           placeholder="Kartnavn..."
+          readOnly={isViewer}
         />
 
         <div className="toolbar-sep" />
