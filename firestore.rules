@@ -58,7 +58,8 @@ service cloud.firestore {
 
       // Any authenticated member can read the map
       allow read: if isSignedIn()
-                   && (resource.data.ownerId == uid() || isMember(mapId));
+                   && (resource.data.ownerId == uid()
+                       || uid() in resource.data.memberUids);
 
       // Only authenticated users can create maps, and they must set
       // themselves as the owner
