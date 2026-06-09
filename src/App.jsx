@@ -2,7 +2,7 @@ import { useEffect, lazy, Suspense } from "react";
 import { onAuthStateChanged } from "firebase/auth";
 import {
   collection, onSnapshot, query, where,
-  doc, setDoc, serverTimestamp,
+  doc, setDoc, serverTimestamp, getDocs, updateDoc, arrayUnion,
 } from "firebase/firestore";
 import { auth, db } from "./firebase";
 import useGigaStore from "./store/useGigaStore";
@@ -85,56 +85,51 @@ export default function App() {
     return () => unsub();
   }, []);
 
-  // Maps listener — query maps where user is a member (or owner via legacy ownerId)
+  // Maps listener — query maps where user is a member
   useEffect(() => {
     if (!user) return;
 
-    // Query maps where user is in memberUids array
-    const memberQuery = query(
+    // One-time migration: find legacy maps owned by user but missing memberUids
+    const migrateLegacy = async () => {
+      try {
+        const legacyQ = query(
+          collection(db, "maps"),
+          where("ownerId", "==", user.uid)
+        );
+        const legacySnap = await getDocs(legacyQ);
+        for (const mapDoc of legacySnap.docs) {
+          const data = mapDoc.data();
+          if (!data.memberUids || !data.memberUids.includes(user.uid)) {
+            await updateDoc(doc(db, "maps", mapDoc.id), {
+              [`members.${user.uid}`]: {
+                role: "owner",
+                email: (user.email || "").toLowerCase(),
+                displayName: user.displayName || user.email || "",
+              },
+              memberUids: arrayUnion(user.uid),
+            });
+          }
+        }
+      } catch (e) { /* ignore migration errors */ }
+    };
+    migrateLegacy();
+
+    // Single query: all maps where user is in memberUids array
+    const mapsQuery = query(
       collection(db, "maps"),
       where("memberUids", "array-contains", user.uid)
     );
 
-    // Also listen for legacy maps (ownerId only, no members field yet)
-    const legacyQuery = query(
-      collection(db, "maps"),
-      where("ownerId", "==", user.uid)
-    );
-
-    const mapById = new Map();
-
-    const updateMaps = () => {
-      const allMaps = Array.from(mapById.values())
+    const unsubMaps = onSnapshot(mapsQuery, (snap) => {
+      const allMaps = snap.docs
+        .map((d) => ({ id: d.id, ...d.data() }))
         .sort((a, b) => (b.updatedAt?.seconds || 0) - (a.updatedAt?.seconds || 0));
       setMaps(allMaps);
-    };
-
-    const unsubMember = onSnapshot(memberQuery, (snap) => {
-      snap.docChanges().forEach((change) => {
-        if (change.type === "removed") {
-          mapById.delete(change.doc.id);
-        } else {
-          mapById.set(change.doc.id, { id: change.doc.id, ...change.doc.data() });
-        }
-      });
-      updateMaps();
+    }, (err) => {
+      console.error("Maps listener error:", err);
     });
 
-    const unsubLegacy = onSnapshot(legacyQuery, (snap) => {
-      snap.docChanges().forEach((change) => {
-        if (change.type === "removed") {
-          mapById.delete(change.doc.id);
-        } else if (!mapById.has(change.doc.id)) {
-          mapById.set(change.doc.id, { id: change.doc.id, ...change.doc.data() });
-        }
-      });
-      updateMaps();
-    });
-
-    return () => {
-      unsubMember();
-      unsubLegacy();
-    };
+    return () => unsubMaps();
   }, [user]);
 
   // Redeem pending invite after login
