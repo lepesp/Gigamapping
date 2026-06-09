@@ -15,7 +15,33 @@ const Dashboard = lazy(() => import("./pages/Dashboard"));
 const MapEditor = lazy(() => import("./pages/MapEditor"));
 
 export default function App() {
-  const { user, setUser, currentMapId, maps, setMaps, pendingInvite, setPendingInvite, redeemInvite } = useGigaStore();
+  const { user, setUser, currentMapId, maps, setMaps, pendingInvite, setPendingInvite, redeemInvite, unsubscribeAll } = useGigaStore();
+
+  // Browser back button: go back to dashboard instead of leaving the app
+  useEffect(() => {
+    const handlePopState = (e) => {
+      if (currentMapId) {
+        e.preventDefault();
+        unsubscribeAll();
+      }
+    };
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, [currentMapId]);
+
+  // Push history state when opening a map
+  useEffect(() => {
+    if (currentMapId) {
+      window.history.pushState({ mapId: currentMapId }, "", `?map=${currentMapId}`);
+    } else {
+      // Clean URL when back on dashboard
+      const url = new URL(window.location);
+      if (url.searchParams.has("map")) {
+        url.searchParams.delete("map");
+        window.history.replaceState({}, "", url.pathname + url.search || "/");
+      }
+    }
+  }, [currentMapId]);
 
   // Load saved theme on mount + check for invite token in URL
   useEffect(() => {
