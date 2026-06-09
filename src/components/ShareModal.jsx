@@ -10,7 +10,7 @@ const ROLE_LABELS = {
 export default function ShareModal({ mapId, onClose }) {
   const {
     user, currentMapData, maps,
-    addMember, removeMember, updateMemberRole, transferOwnership,
+    addMember, removeMember, updateMemberRole, transferOwnership, searchUsers,
     createInvite,
   } = useGigaStore();
 
@@ -25,6 +25,11 @@ export default function ShareModal({ mapId, onClose }) {
   const [inviteRole, setInviteRole] = useState("editor");
   const [inviteLink, setInviteLink] = useState("");
   const [inviteCopied, setInviteCopied] = useState(false);
+  const [emailInput, setEmailInput] = useState("");
+  const [selectedRole, setSelectedRole] = useState("editor");
+  const [searching, setSearching] = useState(false);
+  const [addError, setAddError] = useState("");
+  const [addSuccess, setAddSuccess] = useState("");
 
   // Lazy migration: add owner to members if this is a legacy map
   useEffect(() => {
@@ -38,6 +43,36 @@ export default function ShareModal({ mapId, onClose }) {
       );
     }
   }, [mapId]);
+
+  const handleAddByEmail = async () => {
+    if (!emailInput.trim()) return;
+    setAddError("");
+    setAddSuccess("");
+    setSearching(true);
+    try {
+      const results = await searchUsers(emailInput.trim().toLowerCase());
+      if (results.length === 0) {
+        setAddError("Fant ingen bruker. Bruk invitasjonslenken for å invitere nye brukere.");
+      } else {
+        const foundUser = results[0];
+        if (members[foundUser.id]) {
+          setAddError("Denne brukeren er allerede medlem.");
+        } else {
+          await addMember(
+            mapId, foundUser.id, selectedRole,
+            foundUser.email,
+            foundUser.displayName || foundUser.email,
+          );
+          setAddSuccess(`${foundUser.displayName || foundUser.email} lagt til!`);
+          setEmailInput("");
+          setTimeout(() => setAddSuccess(""), 3000);
+        }
+      }
+    } catch (err) {
+      setAddError(`Feil: ${err.message}`);
+    }
+    setSearching(false);
+  };
 
   const handleRoleChange = async (uid, newRole) => {
     if (newRole === "owner") {
@@ -72,12 +107,58 @@ export default function ShareModal({ mapId, onClose }) {
         </div>
 
         <div className="modal-body">
-          {/* Invite link section */}
+
+          {/* Add existing user by email */}
+          {isOwner && (
+            <div className="modal-section">
+              <label>👤 Legg til bruker</label>
+              <p style={{ fontSize: 12, color: "var(--text-muted)", margin: "4px 0 10px" }}>
+                Søk etter e-post til en registrert bruker
+              </p>
+              <div className="share-search-row">
+                <input
+                  value={emailInput}
+                  onChange={(e) => { setEmailInput(e.target.value); setAddError(""); }}
+                  onKeyDown={(e) => { if (e.key === "Enter") handleAddByEmail(); }}
+                  placeholder="skriv@epost.no"
+                />
+                <select value={selectedRole} onChange={(e) => setSelectedRole(e.target.value)}>
+                  <option value="editor">Les og skriv</option>
+                  <option value="viewer">Kun les</option>
+                </select>
+                <button
+                  className="btn btn-primary"
+                  onClick={handleAddByEmail}
+                  disabled={searching || !emailInput.trim()}
+                >
+                  {searching ? "..." : "Legg til"}
+                </button>
+              </div>
+              {addError && (
+                <div style={{
+                  marginTop: 8, padding: "8px 12px", borderRadius: 8,
+                  background: "rgba(239,68,68,0.12)", color: "#f87171", fontSize: 12,
+                }}>
+                  ⚠️ {addError}
+                </div>
+              )}
+              {addSuccess && (
+                <div style={{
+                  marginTop: 8, padding: "8px 12px", borderRadius: 8,
+                  background: "rgba(16,185,129,0.12)", color: "#10b981", fontSize: 12,
+                }}>
+                  ✅ {addSuccess}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Invite link for new users */}
           {isOwner && (
             <div className="modal-section">
               <label>📨 Invitasjonslenke</label>
               <p style={{ fontSize: 12, color: "var(--text-muted)", margin: "4px 0 10px" }}>
-                Generer en lenke du kan sende til hvem som helst
+                For brukere som ikke har konto ennå
               </p>
               <div className="share-search-row">
                 <select
@@ -137,7 +218,6 @@ export default function ShareModal({ mapId, onClose }) {
               })()}
             </div>
           )}
-
 
 
           {/* Members list */}
