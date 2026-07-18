@@ -10,7 +10,7 @@ export default function GigaNode({
   readOnly = false,
 }) {
   const isPage = !!node.isPage;
-  const { updateNode } = useGigaStore();
+  const { updateNode, patchNodeLocal, endGesture } = useGigaStore();
   const nodeRef = useRef(null);
   const dragging = useRef(false);
   const dragStart = useRef({ mx: 0, my: 0, nx: 0, ny: 0 });
@@ -18,6 +18,22 @@ export default function GigaNode({
   const resizeStart = useRef({ mx: 0, my: 0, w: 0, h: 0 });
   const [editingTitle, setEditingTitle] = useState(false);
   const [localTitle, setLocalTitle] = useState(node.title);
+
+  // En pågående drag/resize må ryddes også hvis noden forsvinner midt i
+  // gesten (f.eks. slettet av en annen bruker), ellers fortsetter
+  // vindus-lytterne å skyte mot et dokument som ikke finnes.
+  const gestureCleanup = useRef(null);
+  useEffect(
+    () => () => {
+      if (gestureCleanup.current) {
+        gestureCleanup.current();
+        // Ellers ville gest-låsen blitt hengende og frosset nodens
+        // geometri mot alle framtidige snapshots
+        endGesture();
+      }
+    },
+    [endGesture]
+  );
 
   // Sync from Firestore when NOT editing
   useEffect(() => {
@@ -49,20 +65,32 @@ export default function GigaNode({
     dragging.current = true;
     dragStart.current = { mx: e.clientX, my: e.clientY, nx: node.x, ny: node.y };
 
+    // Bevegelsen holdes lokalt; Firestore får én skriving på mouseup
+    let last = null;
     const onMove = (me) => {
       if (!dragging.current) return;
       const dx = (me.clientX - dragStart.current.mx) / zoom;
       const dy = (me.clientY - dragStart.current.my) / zoom;
-      updateNode(node.id, { x: dragStart.current.nx + dx, y: dragStart.current.ny + dy });
+      last = { x: dragStart.current.nx + dx, y: dragStart.current.ny + dy };
+      patchNodeLocal(node.id, last);
     };
-    const onUp = () => {
+    const cleanup = () => {
       dragging.current = false;
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
+      gestureCleanup.current = null;
     };
+    const onUp = () => {
+      cleanup();
+      // Slipp gest-låsen først når skrivingen er ute, ellers kan et
+      // mellomliggende snapshot vise den gamle posisjonen et øyeblikk
+      if (last) Promise.resolve(updateNode(node.id, last)).finally(endGesture);
+      else endGesture();
+    };
+    gestureCleanup.current = cleanup;
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
-  }, [node, zoom, isConnecting, isConnectingFrom, editingTitle, readOnly, onSelect, onFinishConnect, updateNode]);
+  }, [node, zoom, isConnecting, isConnectingFrom, editingTitle, readOnly, onSelect, onFinishConnect, updateNode, patchNodeLocal, endGesture]);
 
   // ── Resize ──
   const onResizeMouseDown = useCallback((e) => {
@@ -71,23 +99,35 @@ export default function GigaNode({
     resizing.current = true;
     resizeStart.current = { mx: e.clientX, my: e.clientY, w: node.w, h: node.h };
 
+    // Samme mønster som drag: lokalt underveis, én skriving på mouseup
+    let last = null;
     const onMove = (me) => {
       if (!resizing.current) return;
       const dw = (me.clientX - resizeStart.current.mx) / zoom;
       const dh = (me.clientY - resizeStart.current.my) / zoom;
-      updateNode(node.id, {
+      last = {
         w: Math.max(160, resizeStart.current.w + dw),
         h: Math.max(80, resizeStart.current.h + dh),
-      });
+      };
+      patchNodeLocal(node.id, last);
     };
-    const onUp = () => {
+    const cleanup = () => {
       resizing.current = false;
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
+      gestureCleanup.current = null;
     };
+    const onUp = () => {
+      cleanup();
+      // Slipp gest-låsen først når skrivingen er ute, ellers kan et
+      // mellomliggende snapshot vise den gamle posisjonen et øyeblikk
+      if (last) Promise.resolve(updateNode(node.id, last)).finally(endGesture);
+      else endGesture();
+    };
+    gestureCleanup.current = cleanup;
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
-  }, [node, zoom, updateNode]);
+  }, [node, zoom, updateNode, patchNodeLocal, endGesture]);
 
   // ── Connect button ──
   const onConnectClick = useCallback((e) => {

@@ -60,10 +60,57 @@ export function pageTrail(nodes, pageId) {
   return trail;
 }
 
-const useGigaStore = create((set, get) => ({
+// Oversett Firestore-feil til noe en bruker forstår
+function friendlyError(err) {
+  const code = err?.code || "";
+  if (code.includes("permission-denied"))
+    return "Du har ikke tilgang til å endre dette kartet.";
+  if (code.includes("unavailable") || code.includes("network"))
+    return "Ingen forbindelse — endringen ble ikke lagret.";
+  if (code.includes("not-found"))
+    return "Elementet finnes ikke lenger.";
+  if (code.includes("resource-exhausted"))
+    return "Kvoten for databasen er brukt opp. Prøv igjen senere.";
+  return err?.message || "Noe gikk galt under lagring.";
+}
+
+// Mutasjoner som skriver til Firestore. Uten feilhåndtering ble avviste
+// skrivinger stille forkastet mens UI-et så lagret ut, fordi Firestores
+// latency compensation viser endringen lokalt med én gang.
+const GUARDED_ACTIONS = [
+  "addNode", "updateNode", "deleteNode",
+  "addConnection", "updateConnection", "deleteConnection",
+  "addIdea", "deleteIdea", "promoteIdea",
+  "makePage", "unmakePage",
+  "sendChatMessage",
+];
+
+const withErrorHandling = (config) => (set, get, api) => {
+  const store = config(set, get, api);
+  GUARDED_ACTIONS.forEach((name) => {
+    const original = store[name];
+    if (typeof original !== "function") return;
+    store[name] = async (...args) => {
+      try {
+        return await original(...args);
+      } catch (err) {
+        console.error(`${name} feilet:`, err);
+        set({ syncError: friendlyError(err) });
+      }
+    };
+  });
+  return store;
+};
+
+const useGigaStore = create(withErrorHandling((set, get) => ({
   // Auth
   user: null,
   setUser: (user) => set({ user }),
+
+  // Feil fra skrivinger og lyttere. Uten dette forsvant feilede lagringer
+  // stille mens UI-et så lagret ut — vises nå av <ErrorToast />.
+  syncError: null,
+  setSyncError: (syncError) => set({ syncError }),
 
   // Current map
   currentMapId: null,
@@ -187,6 +234,27 @@ const useGigaStore = create((set, get) => ({
     });
     if (currentPageId === nodeId) set({ currentPageId: null });
     return true;
+  },
+
+  // Geometrien til noden som dras/skaleres akkurat nå. Snapshots fra
+  // Firestore (f.eks. når en kollega redigerer samtidig) skal ikke
+  // overstyre en pågående gest — da ville noden hoppet tilbake i hånda.
+  activeGesture: null, // { nodeId, patch }
+  endGesture: () => set({ activeGesture: null }),
+
+  // Ren lokal flytting/skalering — brukes under drag og resize så noden
+  // følger musa uten å skrive til Firestore på hver eneste mousemove.
+  // Selve lagringen skjer én gang, på mouseup, via updateNode.
+  patchNodeLocal: (nodeId, updates) => {
+    const prev = get().activeGesture;
+    const patch =
+      prev?.nodeId === nodeId ? { ...prev.patch, ...updates } : { ...updates };
+    set({
+      nodes: get().nodes.map((n) =>
+        n.id === nodeId ? { ...n, ...updates } : n
+      ),
+      activeGesture: { nodeId, patch },
+    });
   },
 
   updateNode: async (nodeId, updates) => {
@@ -425,12 +493,30 @@ const useGigaStore = create((set, get) => ({
       }
     );
 
+    // En lytter som feiler blir terminert permanent av SDK-en. Uten
+    // error-callback fryser lerretet stille på siste kjente data mens
+    // brukeren tror han fortsatt er koblet til.
+    const onListenerError = (what) => (err) => {
+      console.error(`Lytter for ${what} feilet:`, err);
+      set({ syncError: `Mistet forbindelsen til ${what}. Last siden på nytt.` });
+    };
+
     const unsubNodes = onSnapshot(
       collection(db, "maps", mapId, "nodes"),
       (snap) => {
-        const nodes = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-        set({ nodes });
-      }
+        const incoming = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        // Behold posisjonen til noden som dras akkurat nå, ellers rykker
+        // den tilbake hver gang en annen bruker endrer noe i kartet
+        const gesture = get().activeGesture;
+        set({
+          nodes: gesture
+            ? incoming.map((n) =>
+                n.id === gesture.nodeId ? { ...n, ...gesture.patch } : n
+              )
+            : incoming,
+        });
+      },
+      onListenerError("nodene")
     );
 
     const unsubConns = onSnapshot(
@@ -438,7 +524,8 @@ const useGigaStore = create((set, get) => ({
       (snap) => {
         const connections = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
         set({ connections });
-      }
+      },
+      onListenerError("koblingene")
     );
 
     const unsubIdeas = onSnapshot(
@@ -448,7 +535,8 @@ const useGigaStore = create((set, get) => ({
           .map((d) => ({ id: d.id, ...d.data() }))
           .sort((a, b) => (a.createdAt?.seconds || 0) - (b.createdAt?.seconds || 0));
         set({ ideas });
-      }
+      },
+      onListenerError("ideene")
     );
 
     // Subscribe to presence
@@ -596,6 +684,6 @@ const useGigaStore = create((set, get) => ({
   // History (undo/redo) - basic snapshot
   history: [],
   historyIndex: -1,
-}));
+})));
 
 export default useGigaStore;

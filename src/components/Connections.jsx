@@ -43,8 +43,8 @@ function getAccentColor() {
   return getComputedStyle(document.documentElement).getPropertyValue("--accent").trim() || "#6366f1";
 }
 
-export default function Connections({ nodes, connections, dragLine }) {
-  const { selectedConnectionId, setSelectedConnectionId, deleteConnection, updateConnection } = useGigaStore();
+export default function Connections({ nodes, connections, dragLine, readOnly = false }) {
+  const { selectedConnectionId, setSelectedConnectionId, deleteConnection } = useGigaStore();
   const [accent, setAccent] = useState("#6366f1");
   const svgRef = useRef(null);
 
@@ -99,13 +99,15 @@ export default function Connections({ nodes, connections, dragLine }) {
 
         return (
           <g key={conn.id}>
-            {/* Invisible wider hit area */}
+            {/* Invisible wider hit area.
+                .connections-svg har pointer-events: none, som arves — uten
+                å slå det på igjen her kan koblinger aldri klikkes/velges. */}
             <path
               d={path}
               stroke="transparent"
               strokeWidth={16}
               fill="none"
-              style={{ cursor: "pointer" }}
+              style={{ cursor: "pointer", pointerEvents: "stroke" }}
               onClick={(e) => {
                 e.stopPropagation();
                 setSelectedConnectionId(isSelected ? null : conn.id);
@@ -121,6 +123,10 @@ export default function Connections({ nodes, connections, dragLine }) {
               opacity={0.75}
               markerEnd={`url(#${markerId})`}
               style={{ filter: isSelected ? `drop-shadow(0 0 6px ${color})` : undefined }}
+              onClick={(e) => {
+                e.stopPropagation();
+                setSelectedConnectionId(isSelected ? null : conn.id);
+              }}
             />
             {/* Label */}
             {conn.label && (
@@ -133,10 +139,10 @@ export default function Connections({ nodes, connections, dragLine }) {
                 {conn.label}
               </text>
             )}
-            {/* Delete button when selected */}
-            {isSelected && (
+            {/* Delete button when selected — skjult for lesetilgang */}
+            {isSelected && !readOnly && (
               <g
-                style={{ cursor: "pointer" }}
+                style={{ cursor: "pointer", pointerEvents: "all" }}
                 onClick={(e) => { e.stopPropagation(); deleteConnection(conn.id); setSelectedConnectionId(null); }}
               >
                 <circle cx={midX} cy={midY} r={12} fill="var(--bg-card)" stroke="var(--danger)" strokeWidth={1.5} />

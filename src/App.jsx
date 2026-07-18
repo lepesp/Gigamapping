@@ -7,6 +7,7 @@ import {
 import { auth, db } from "./firebase";
 import useGigaStore from "./store/useGigaStore";
 import { applyTheme, getSavedTheme } from "./themes";
+import ErrorToast from "./components/ErrorToast";
 import "./index.css";
 
 // Lazy-load pages for code splitting
@@ -140,6 +141,9 @@ export default function App() {
       setMaps(allMaps);
     }, (err) => {
       console.error("Maps listener error:", err);
+      useGigaStore.getState().setSyncError(
+        "Kunne ikke hente kartene dine. Sjekk nettforbindelsen."
+      );
     });
 
     return () => unsubMaps();
@@ -161,16 +165,19 @@ export default function App() {
   const page = !user ? <AuthPage /> : currentMapId ? <MapEditor /> : <Dashboard />;
 
   return (
-    <Suspense fallback={
-      <div style={{
-        display: "flex", alignItems: "center", justifyContent: "center",
-        height: "100vh", color: "var(--text-muted)", fontSize: 14,
-        fontFamily: "Outfit, sans-serif",
-      }}>
-        Laster...
-      </div>
-    }>
-      {page}
-    </Suspense>
+    <>
+      <ErrorToast />
+      <Suspense fallback={
+        <div style={{
+          display: "flex", alignItems: "center", justifyContent: "center",
+          height: "100vh", color: "var(--text-muted)", fontSize: 14,
+          fontFamily: "Outfit, sans-serif",
+        }}>
+          Laster...
+        </div>
+      }>
+        {page}
+      </Suspense>
+    </>
   );
 }

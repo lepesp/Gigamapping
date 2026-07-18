@@ -217,6 +217,7 @@ export default function MapEditor() {
             connections={visibleConnections}
             dragLine={dragLine}
             zoom={zoom}
+            readOnly={isViewer}
           />
 
           {/* Nodes */}
