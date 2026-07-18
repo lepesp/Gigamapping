@@ -60,6 +60,40 @@ export function pageTrail(nodes, pageId) {
   return trail;
 }
 
+// Innholdsendringer skal slå gjennom på kartets updatedAt, ellers viser
+// dashbordet feil "Oppdatert"-dato og sorterer kartene feil. Debounces så
+// det ikke blir én ekstra skriving per endring.
+let touchTimer = null;
+function touchMap(mapId) {
+  if (!mapId) return;
+  if (touchTimer) clearTimeout(touchTimer);
+  touchTimer = setTimeout(() => {
+    touchTimer = null;
+    updateDoc(doc(db, "maps", mapId), { updatedAt: serverTimestamp() }).catch(
+      () => {}
+    );
+  }, 2000);
+}
+
+// Tilstand som hører til ETT kart. Nullstilles ved kartbytte og utlogging,
+// ellers vises forrige karts noder i det nye kartet — og redigering av dem
+// skriver til feil dokumentsti.
+const EMPTY_MAP_STATE = {
+  nodes: [],
+  connections: [],
+  ideas: [],
+  chatMessages: [],
+  onlineUsers: [],
+  selectedNodeId: null,
+  selectedConnectionId: null,
+  connectingFrom: null,
+  openModalNodeId: null,
+  currentPageId: null,
+  activeGesture: null,
+  currentMapData: null,
+  userRole: null,
+};
+
 // Oversett Firestore-feil til noe en bruker forstår
 function friendlyError(err) {
   const code = err?.code || "";
@@ -82,8 +116,15 @@ const GUARDED_ACTIONS = [
   "addConnection", "updateConnection", "deleteConnection",
   "addIdea", "deleteIdea", "promoteIdea",
   "makePage", "unmakePage",
-  "sendChatMessage",
+  "sendChatMessage", "deleteMap",
 ];
+
+// Endringer som skal telle som "kartet ble oppdatert". Chat og sletting
+// av selve kartet holdes utenfor — det første er ikke innhold, det andre
+// ville skrevet til et dokument som nettopp forsvant.
+const TOUCHING_ACTIONS = new Set(
+  GUARDED_ACTIONS.filter((n) => n !== "sendChatMessage" && n !== "deleteMap")
+);
 
 const withErrorHandling = (config) => (set, get, api) => {
   const store = config(set, get, api);
@@ -92,7 +133,9 @@ const withErrorHandling = (config) => (set, get, api) => {
     if (typeof original !== "function") return;
     store[name] = async (...args) => {
       try {
-        return await original(...args);
+        const result = await original(...args);
+        if (TOUCHING_ACTIONS.has(name)) touchMap(get().currentMapId);
+        return result;
       } catch (err) {
         console.error(`${name} feilet:`, err);
         set({ syncError: friendlyError(err) });
@@ -194,6 +237,43 @@ const useGigaStore = create(withErrorHandling((set, get) => ({
     const prev = get().pan;
     const raw = typeof panOrFn === 'function' ? panOrFn(prev) : panOrFn;
     set({ pan: raw });
+  },
+
+  // Tilpass innholdet på gjeldende nivå til viewporten. Pan regnes med
+  // den CLAMPEDE zoomen — ellers spriker zoom og pan for store kart, og
+  // resultatet blir et tomt lerret.
+  fitToScreen: (viewport) => {
+    const { nodes, currentPageId } = get();
+    if (!viewport) return;
+    const level = nodes.filter(
+      (n) => (n.parentId ?? null) === (currentPageId ?? null)
+    );
+    if (level.length === 0) {
+      set({ zoom: 1, pan: { x: 0, y: 0 } });
+      return;
+    }
+    const minX = Math.min(...level.map((n) => n.x));
+    const minY = Math.min(...level.map((n) => n.y));
+    const maxX = Math.max(...level.map((n) => n.x + n.w));
+    const maxY = Math.max(...level.map((n) => n.y + n.h));
+    const PAD = 80;
+    const zoom = Math.min(
+      1.5,
+      Math.max(
+        0.1,
+        Math.min(
+          viewport.width / (maxX - minX + PAD),
+          viewport.height / (maxY - minY + PAD)
+        )
+      )
+    );
+    set({
+      zoom,
+      pan: {
+        x: viewport.width / 2 - ((minX + maxX) / 2) * zoom,
+        y: viewport.height / 2 - ((minY + maxY) / 2) * zoom,
+      },
+    });
   },
 
   // --- Node actions ---
@@ -466,7 +546,7 @@ const useGigaStore = create(withErrorHandling((set, get) => ({
           await addMember(mapId, user.uid, "owner", (user.email || "").toLowerCase(), user.displayName || user.email || "");
         }
       }
-    } catch (e) { /* ignore migration errors */ }
+    } catch { /* ignore migration errors */ }
 
     // Listen to the map document for membership/role changes
     const unsubMap = onSnapshot(
@@ -486,7 +566,7 @@ const useGigaStore = create(withErrorHandling((set, get) => ({
             const { addMember } = get();
             await addMember(mapId, user.uid, "owner", (user.email || "").toLowerCase(), user.displayName || user.email || "");
             role = "owner";
-          } catch (e) { /* ignore */ }
+          } catch { /* ignore */ }
         }
 
         set({ currentMapData: data, userRole: role });
@@ -582,15 +662,16 @@ const useGigaStore = create(withErrorHandling((set, get) => ({
           email: (user.email || "").toLowerCase(),
           lastSeen: serverTimestamp(),
         });
-      } catch (e) { /* ignore */ }
+      } catch { /* ignore */ }
     };
     writePresence();
     const heartbeatInterval = setInterval(writePresence, 30000);
 
     set({
+      // Rydd forrige karts innhold FØR de nye snapshotene kommer, ellers
+      // rendres kart A inne i kart B mens man venter på nettverket
+      ...EMPTY_MAP_STATE,
       currentMapId: mapId,
-      // Alltid start på kartets toppnivå når et kart åpnes
-      currentPageId: null,
       unsubscribeNodes: unsubNodes,
       unsubscribeConnections: unsubConns,
       unsubscribeIdeas: unsubIdeas,
@@ -619,8 +700,51 @@ const useGigaStore = create(withErrorHandling((set, get) => ({
     }
     set({
       onlineUsers: [], chatMessages: [],
+      unsubscribeNodes: null, unsubscribeConnections: null,
+      unsubscribeIdeas: null, unsubscribeMapDoc: null,
       unsubscribePresence: null, unsubscribeChat: null, heartbeatInterval: null,
     });
+  },
+
+  // Lukk kartet og rydd alt kartinnhold (tilbake til dashbordet)
+  closeMap: () => {
+    get().unsubscribeAll();
+    set({ ...EMPTY_MAP_STATE, currentMapId: null });
+  },
+
+  // Full nullstilling ved utlogging. Uten denne overlevde både åpent kart
+  // og levende lyttere, så neste konto som logget inn på samme maskin
+  // landet rett i forrige brukers kart.
+  resetSession: () => {
+    get().unsubscribeAll();
+    set({
+      ...EMPTY_MAP_STATE,
+      currentMapId: null,
+      maps: [],
+      syncError: null,
+    });
+  },
+
+  // Firestore kaskade-sletter aldri subkolleksjoner. Uten dette ble alle
+  // noder, koblinger, ideer og chat liggende igjen for alltid.
+  deleteMap: async (mapId) => {
+    const refs = [];
+    for (const sub of ["nodes", "connections", "ideas", "chat", "presence"]) {
+      try {
+        const snap = await getDocs(collection(db, "maps", mapId, sub));
+        snap.docs.forEach((d) => refs.push(d.ref));
+      } catch {
+        // Mangler tilgang til en subkolleksjon — hopp over den
+      }
+    }
+    // Kart-dokumentet slettes SIST, slik at reglenes eierskapssjekk
+    // (get på parent) fortsatt holder mens subkolleksjonene ryddes
+    for (let i = 0; i < refs.length; i += 450) {
+      const batch = writeBatch(db);
+      refs.slice(i, i + 450).forEach((r) => batch.delete(r));
+      await batch.commit();
+    }
+    await deleteDoc(doc(db, "maps", mapId));
   },
 
   // --- Invite links ---

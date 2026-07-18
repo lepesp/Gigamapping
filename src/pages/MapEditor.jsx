@@ -13,12 +13,12 @@ export default function MapEditor() {
   const {
     nodes, connections, zoom, setZoom, pan, setPan,
     selectedNodeId, setSelectedNodeId,
-    selectedConnectionId, setSelectedConnectionId,
+    setSelectedConnectionId,
     connectingFrom, setConnectingFrom,
     openModalNodeId, setOpenModalNodeId,
     addNode, addConnection, promoteIdea,
-    currentMapId, userRole,
-    currentPageId, enterPage,
+    userRole,
+    currentPageId, enterPage, fitToScreen,
   } = useGigaStore();
 
   const isViewer = userRole === "viewer";
@@ -46,6 +46,8 @@ export default function MapEditor() {
   const canvasRef = useRef(null);
   const isPanning = useRef(false);
   const lastMouse = useRef({ x: 0, y: 0 });
+  // Refs kan ikke leses under render — egen state styrer .panning-klassen
+  const [panActive, setPanActive] = useState(false);
   const [contextMenu, setContextMenu] = useState(null);
   const [dragLine, setDragLine] = useState(null); // live connection line while dragging
 
@@ -54,6 +56,7 @@ export default function MapEditor() {
     if (e.button === 1 || (e.button === 0 && e.target === canvasRef.current)) {
       if (connectingFrom) return;
       isPanning.current = true;
+      setPanActive(true);
       lastMouse.current = { x: e.clientX, y: e.clientY };
       setSelectedNodeId(null);
       setSelectedConnectionId(null);
@@ -75,27 +78,52 @@ export default function MapEditor() {
     }
   }, [connectingFrom, dragLine, pan, zoom]);
 
-  const onMouseUp = useCallback(() => {
-    isPanning.current = false;
+  // Slippes museknappen utenfor lerretet (over toolbaren, eller utenfor
+  // vinduet) nådde mouseup aldri canvas-diven, og kartet ble hengende
+  // fast på cursoren. Derfor lyttes det på window.
+  useEffect(() => {
+    const endPan = () => {
+      isPanning.current = false;
+      setPanActive(false);
+    };
+    window.addEventListener("mouseup", endPan);
+    window.addEventListener("blur", endPan);
+    return () => {
+      window.removeEventListener("mouseup", endPan);
+      window.removeEventListener("blur", endPan);
+    };
   }, []);
 
-  // ── Zoom on scroll ──
+  // ── Zoom rundt et ankerpunkt ──
+  const zoomAt = useCallback((factor, cx, cy) => {
+    const { zoom: prevZoom, pan: prevPan } = useGigaStore.getState();
+    const newZoom = Math.min(3, Math.max(0.1, prevZoom * factor));
+    const scale = newZoom / prevZoom;
+    setZoom(newZoom);
+    setPan({
+      x: cx - scale * (cx - prevPan.x),
+      y: cy - scale * (cy - prevPan.y),
+    });
+  }, [setZoom, setPan]);
+
   const onWheel = useCallback((e) => {
     e.preventDefault();
-    const delta = e.deltaY > 0 ? 0.9 : 1.1;
     const rect = canvasRef.current.getBoundingClientRect();
-    const mx = e.clientX - rect.left;
-    const my = e.clientY - rect.top;
-    setZoom((prev) => {
-      const newZoom = Math.min(3, Math.max(0.1, prev * delta));
-      const scale = newZoom / prev;
-      setPan((p) => ({
-        x: mx - scale * (mx - p.x),
-        y: my - scale * (my - p.y),
-      }));
-      return newZoom;
-    });
-  }, []);
+    zoomAt(e.deltaY > 0 ? 0.9 : 1.1, e.clientX - rect.left, e.clientY - rect.top);
+  }, [zoomAt]);
+
+  // Zoom-knappene ankret rundt verdens origo, så innhold som lå langt
+  // unna fløy av skjermen. Ankres nå i midten av lerretet.
+  const zoomButton = useCallback((factor) => {
+    const el = canvasRef.current;
+    if (!el) return;
+    zoomAt(factor, el.clientWidth / 2, el.clientHeight / 2);
+  }, [zoomAt]);
+
+  const handleFit = useCallback(() => {
+    const el = canvasRef.current;
+    if (el) fitToScreen({ width: el.clientWidth, height: el.clientHeight });
+  }, [fitToScreen]);
 
   useEffect(() => {
     const el = canvasRef.current;
@@ -178,20 +206,19 @@ export default function MapEditor() {
 
   const canvasClass = [
     "canvas-area",
-    isPanning.current ? "panning" : "",
+    panActive ? "panning" : "",
     connectingFrom ? "connecting" : "",
   ].filter(Boolean).join(" ");
 
   return (
     <div className="app-layout">
-      <Toolbar />
+      <Toolbar onFitToScreen={handleFit} />
 
       <div
         ref={canvasRef}
         className={canvasClass}
         onMouseDown={onMouseDown}
         onMouseMove={onMouseMove}
-        onMouseUp={onMouseUp}
         onDoubleClick={onDoubleClick}
         onContextMenu={onContextMenu}
         onClick={() => { setContextMenu(null); if (connectingFrom) cancelConnecting(); }}
@@ -242,17 +269,17 @@ export default function MapEditor() {
 
         {/* Zoom controls */}
         <div className="zoom-controls">
-          <button className="btn btn-ghost btn-icon" onClick={() => setZoom(zoom / 1.2)}>−</button>
+          <button className="btn btn-ghost btn-icon" onClick={() => zoomButton(1 / 1.2)}>−</button>
           <span className="zoom-label">{Math.round(zoom * 100)}%</span>
-          <button className="btn btn-ghost btn-icon" onClick={() => setZoom(zoom * 1.2)}>+</button>
-          <button className="btn btn-ghost btn-icon" title="Tilpass skjerm" onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }); }}>⊡</button>
+          <button className="btn btn-ghost btn-icon" onClick={() => zoomButton(1.2)}>+</button>
+          <button className="btn btn-ghost btn-icon" title="Tilpass skjerm" onClick={handleFit}>⊡</button>
         </div>
 
         {/* Mini map — viser nivået man står i */}
         <MiniMap nodes={visibleNodes} pan={pan} zoom={zoom} canvasRef={canvasRef} />
 
         {/* Idea brainstorm panel — hidden for viewers */}
-        {!isViewer && <IdeaPanel pan={pan} zoom={zoom} canvasRef={canvasRef} />}
+        {!isViewer && <IdeaPanel />}
 
         {/* Live chat panel (left side) */}
         <PresenceChat />

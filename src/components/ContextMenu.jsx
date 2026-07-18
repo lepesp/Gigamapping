@@ -1,3 +1,4 @@
+import { useRef, useState, useLayoutEffect } from "react";
 import useGigaStore from "../store/useGigaStore";
 
 export default function ContextMenu({ x, y, canvasX, canvasY, onClose }) {
@@ -7,6 +8,20 @@ export default function ContextMenu({ x, y, canvasX, canvasY, onClose }) {
   } = useGigaStore();
 
   const selectedNode = nodes.find((n) => n.id === selectedNodeId);
+
+  // Klem menyen innenfor viewporten — høyreklikk nær høyre/nedre kant
+  // ga ellers en meny man verken kunne se eller klikke
+  const menuRef = useRef(null);
+  const [pos, setPos] = useState({ x, y });
+  useLayoutEffect(() => {
+    const el = menuRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    setPos({
+      x: Math.max(8, Math.min(x, window.innerWidth - rect.width - 8)),
+      y: Math.max(8, Math.min(y, window.innerHeight - rect.height - 8)),
+    });
+  }, [x, y]);
 
   // Sletting tar hele underkartet under noden — advar først
   const confirmDelete = () => {
@@ -49,8 +64,9 @@ export default function ContextMenu({ x, y, canvasX, canvasY, onClose }) {
 
   return (
     <div
+      ref={menuRef}
       className="context-menu"
-      style={{ left: x, top: y }}
+      style={{ left: pos.x, top: pos.y }}
       onClick={(e) => e.stopPropagation()}
     >
       {items.map((item, i) => (

@@ -159,10 +159,17 @@ export default function ExportModal({ onClose }) {
 
   const content = tab === "ai" ? buildAIExport() : buildJSONExport();
 
-  const copyToClipboard = () => {
-    navigator.clipboard.writeText(content);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  const copyToClipboard = async () => {
+    // navigator.clipboard finnes ikke på usikret opprinnelse, og writeText
+    // kan avvises — ikke vis "Kopiert!" på en kopiering som feilet
+    try {
+      await navigator.clipboard.writeText(content);
+      setCopied("ok");
+    } catch (err) {
+      console.error("Kopiering feilet:", err);
+      setCopied("fail");
+    }
+    setTimeout(() => setCopied(false), 2500);
   };
 
   const downloadFile = () => {
@@ -239,7 +246,9 @@ export default function ExportModal({ onClose }) {
 
               <div style={{ display: "flex", gap: 8 }}>
                 <button className="btn btn-primary" onClick={copyToClipboard} style={{ flex: 1 }}>
-                  {copied ? "✓ Kopiert!" : "📋 Kopier til utklippstavle"}
+                  {copied === "ok" && "✓ Kopiert!"}
+                  {copied === "fail" && "⚠ Kopiering feilet – marker teksten manuelt"}
+                  {!copied && "📋 Kopier til utklippstavle"}
                 </button>
                 <button className="btn btn-ghost" onClick={downloadFile}>
                   ↓ Last ned fil

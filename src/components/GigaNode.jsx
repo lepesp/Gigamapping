@@ -1,9 +1,12 @@
-import { useRef, useState, useCallback, useEffect } from "react";
+import { memo, useRef, useState, useCallback, useEffect } from "react";
 import useGigaStore from "../store/useGigaStore";
+import { TYPE_COLORS, readableTextColors } from "../nodeTypes";
 
-const NODE_TYPES = ["Generell", "Avdeling", "System", "Prosess", "Person", "Mål", "Problem", "Idé"];
+// Gammel standardfarge som ligger lagret i eksisterende noder.
+// Nye noder lagres med color: "" for "følg temaet".
+const LEGACY_DEFAULT_COLOR = "#e8edf5";
 
-export default function GigaNode({
+function GigaNode({
   node, isSelected, isConnecting, isConnectingFrom,
   onSelect, onOpen, onStartConnect, onFinishConnect, zoom,
   onEnterPage, childCount = 0,
@@ -17,7 +20,14 @@ export default function GigaNode({
   const resizing = useRef(false);
   const resizeStart = useRef({ mx: 0, my: 0, w: 0, h: 0 });
   const [editingTitle, setEditingTitle] = useState(false);
-  const [localTitle, setLocalTitle] = useState(node.title);
+  // Kladden lever bare mens man redigerer, og seedes idet redigeringen
+  // starter. Da trengs ingen synk-effekt mot Firestore-snapshots — som
+  // var det som kunne rykke teksten tilbake midt i skrivingen.
+  const [localTitle, setLocalTitle] = useState("");
+  const beginEditTitle = useCallback(() => {
+    setLocalTitle(node.title ?? "");
+    setEditingTitle(true);
+  }, [node.title]);
 
   // En pågående drag/resize må ryddes også hvis noden forsvinner midt i
   // gesten (f.eks. slettet av en annen bruker), ellers fortsetter
@@ -34,13 +44,6 @@ export default function GigaNode({
     },
     [endGesture]
   );
-
-  // Sync from Firestore when NOT editing
-  useEffect(() => {
-    if (!editingTitle) {
-      setLocalTitle(node.title);
-    }
-  }, [node.title, editingTitle]);
 
   // ── Drag (disabled for readOnly) ──
   const onMouseDownNode = useCallback((e) => {
@@ -135,21 +138,21 @@ export default function GigaNode({
     if (isConnecting) {
       onFinishConnect(node.id);
     } else {
-      const rect = nodeRef.current.getBoundingClientRect();
       // We pass canvas coords via node position
       onStartConnect(node.id, node.x + node.w, node.y + node.h / 2);
     }
   }, [node, isConnecting, onStartConnect, onFinishConnect]);
 
-  const isDefaultColor = !node.color || node.color === "#e8edf5" || node.color === "#1e2a4a" || node.color === "#1a1f35";
-  const bgColor = isDefaultColor ? "var(--node-bg)" : node.color;
+  // Tidligere ble også #1e2a4a og #1a1f35 regnet som "ingen farge" — men
+  // de er de to første valgbare swatchene i Dark-temaet, så et bevisst
+  // fargevalg ble stille forkastet. Nå er "" den eneste sentinelen.
+  const hasCustomColor = node.color && node.color !== LEGACY_DEFAULT_COLOR;
+  const bgColor = hasCustomColor ? node.color : "var(--node-bg)";
+  // Sørg for lesbar tekst oppå egendefinert bakgrunn, uansett aktivt tema
+  const customTextVars = hasCustomColor ? readableTextColors(node.color) : null;
 
   // Specific types get their own colors; Generell/Idé follow the theme accent
-  const typeColors = {
-    Avdeling: "#7c3aed", System: "#0284c7", Prosess: "#059669",
-    Person: "#d97706", Mål: "#dc2626", Problem: "#b45309",
-  };
-  const hasFixedColor = typeColors[node.type];
+  const hasFixedColor = TYPE_COLORS[node.type];
 
   return (
     <div
@@ -165,6 +168,7 @@ export default function GigaNode({
         boxShadow: isSelected
           ? `0 0 0 2px var(--accent-glow), 0 4px 16px rgba(0,0,0,0.12)`
           : `0 2px 12px rgba(0,0,0,0.08)`,
+        ...customTextVars,
       }}
       onMouseDown={onMouseDownNode}
       onDoubleClick={(e) => { e.stopPropagation(); onOpen(); }}
@@ -203,7 +207,7 @@ export default function GigaNode({
         ) : (
           <span
             className="node-title"
-            onDoubleClick={(e) => { if (!readOnly) { e.stopPropagation(); setEditingTitle(true); } }}
+            onDoubleClick={(e) => { if (!readOnly) { e.stopPropagation(); beginEditTitle(); } }}
             title={readOnly ? node.title : "Dobbeltklikk for å redigere tittel"}
           >
             {node.title || "Uten tittel"}
@@ -260,3 +264,5 @@ export default function GigaNode({
     </div>
   );
 }
+
+export default memo(GigaNode);

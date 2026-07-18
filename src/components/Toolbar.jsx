@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { signOut } from "firebase/auth";
 import { doc, updateDoc, serverTimestamp } from "firebase/firestore";
 import { auth, db } from "../firebase";
@@ -7,11 +7,11 @@ import ExportModal from "./ExportModal";
 import ThemePicker from "./ThemePicker";
 import ShareModal from "./ShareModal";
 
-export default function Toolbar() {
+export default function Toolbar({ onFitToScreen }) {
   const {
     user, currentMapId, maps, nodes, connections,
-    setCurrentMapId, unsubscribeAll,
-    addNode, pan, zoom, setZoom, setPan,
+    closeMap,
+    addNode, pan, zoom,
     selectedNodeId, deleteNode,
     selectedConnectionId, deleteConnection,
     userRole,
@@ -38,17 +38,19 @@ export default function Toolbar() {
   const currentMap = maps.find((m) => m.id === currentMapId);
   const [showExport, setShowExport] = useState(false);
   const [showShare, setShowShare] = useState(false);
-  const [title, setTitle] = useState(currentMap?.title || "");
+  // Kladden lever bare mens man redigerer og seedes ved fokus. Da trengs
+  // ingen synk-effekt, og feltet kan ikke rykke tilbake til gammelt navn
+  // midt i skrivingen fordi et snapshot kom inn.
+  const [title, setTitle] = useState("");
   const [isEditing, setIsEditing] = useState(false);
+  const shownTitle = isEditing ? title : (currentMap?.title || "");
   const isViewer = userRole === "viewer";
   const isOwner = userRole === "owner";
 
-  // Keep title in sync with Firestore (but not while user is editing)
-  useEffect(() => {
-    if (!isEditing && currentMap?.title) {
-      setTitle(currentMap.title);
-    }
-  }, [currentMap?.title, isEditing]);
+  const beginEditTitle = () => {
+    setTitle(currentMap?.title || "");
+    setIsEditing(true);
+  };
 
   const saveTitle = async () => {
     setIsEditing(false);
@@ -66,8 +68,8 @@ export default function Toolbar() {
   };
 
   const goToDashboard = () => {
-    unsubscribeAll();
-    setCurrentMapId(null);
+    // closeMap rydder også kartinnholdet, ikke bare lytterne
+    closeMap();
   };
 
   const handleAddNode = () => {
@@ -84,23 +86,14 @@ export default function Toolbar() {
     });
   };
 
-  const fitToScreen = () => {
-    if (nodes.length === 0) { setZoom(1); setPan({ x: 0, y: 0 }); return; }
-    const minX = Math.min(...nodes.map((n) => n.x));
-    const minY = Math.min(...nodes.map((n) => n.y));
-    const maxX = Math.max(...nodes.map((n) => n.x + n.w));
-    const maxY = Math.max(...nodes.map((n) => n.y + n.h));
-    const W = window.innerWidth - 40;
-    const H = window.innerHeight - 100;
-    const scaleX = W / (maxX - minX + 80);
-    const scaleY = H / (maxY - minY + 80);
-    const newZoom = Math.min(1.5, Math.min(scaleX, scaleY));
-    setZoom(newZoom);
-    setPan({
-      x: (W / 2) - ((minX + maxX) / 2) * newZoom + 20,
-      y: (H / 2) - ((minY + maxY) / 2) * newZoom + 60,
-    });
-  };
+  // Tellerne skal gjelde nivået man står i, ikke hele kartet på tvers
+  // av alle underkart
+  const levelNodeCount = nodes.filter(
+    (n) => (n.parentId ?? null) === (currentPageId ?? null)
+  ).length;
+  const levelConnCount = connections.filter(
+    (c) => (c.parentId ?? null) === (currentPageId ?? null)
+  ).length;
 
   return (
     <>
@@ -115,9 +108,9 @@ export default function Toolbar() {
         {/* Map title */}
         <input
           className="toolbar-map-name"
-          value={title}
+          value={shownTitle}
           onChange={(e) => setTitle(e.target.value)}
-          onFocus={() => setIsEditing(true)}
+          onFocus={beginEditTitle}
           onBlur={saveTitle}
           onKeyDown={(e) => { if (e.key === "Enter") { e.target.blur(); } }}
           placeholder="Kartnavn..."
@@ -204,14 +197,14 @@ export default function Toolbar() {
 
         {/* Stats */}
         <div style={{ fontSize: 12, color: "var(--text-muted)", display: "flex", gap: 14 }}>
-          <span>📦 {nodes.length} noder</span>
-          <span>🔗 {connections.length} koblinger</span>
+          <span>📦 {levelNodeCount} noder</span>
+          <span>🔗 {levelConnCount} koblinger</span>
         </div>
 
         <div className="toolbar-sep" />
 
         {/* Fit to screen */}
-        <button className="btn btn-ghost btn-icon" onClick={fitToScreen} title="Tilpass til skjerm">
+        <button className="btn btn-ghost btn-icon" onClick={onFitToScreen} title="Tilpass til skjerm">
           ⊡
         </button>
 

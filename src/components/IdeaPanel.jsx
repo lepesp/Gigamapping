@@ -1,12 +1,14 @@
-import { useState, useRef } from "react";
+import { useState } from "react";
 import useGigaStore from "../store/useGigaStore";
 
-export default function IdeaPanel({ pan, zoom, canvasRef }) {
-  const { ideas, addIdea, deleteIdea, promoteIdea } = useGigaStore();
+// Selve droppen på lerretet håndteres av MapEditors onDrop (promoteIdea)
+export default function IdeaPanel() {
+  const ideas = useGigaStore((s) => s.ideas);
+  const addIdea = useGigaStore((s) => s.addIdea);
+  const deleteIdea = useGigaStore((s) => s.deleteIdea);
   const [input, setInput] = useState("");
   const [collapsed, setCollapsed] = useState(false);
   const [draggingId, setDraggingId] = useState(null);
-  const inputRef = useRef(null);
 
   const handleKeyDown = (e) => {
     if (e.key === "Enter" && input.trim()) {
@@ -22,12 +24,9 @@ export default function IdeaPanel({ pan, zoom, canvasRef }) {
     e.dataTransfer.effectAllowed = "move";
   };
 
-  const handleDragEnd = (e) => {
+  const handleDragEnd = () => {
     setDraggingId(null);
   };
-
-  // This is called from MapEditor's onDrop
-  // But we also handle direct drop on canvas via the store's promoteIdea
 
   return (
     <div
@@ -75,7 +74,6 @@ export default function IdeaPanel({ pan, zoom, canvasRef }) {
           {/* Input */}
           <div style={{ padding: "8px 10px", flexShrink: 0 }}>
             <input
-              ref={inputRef}
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}

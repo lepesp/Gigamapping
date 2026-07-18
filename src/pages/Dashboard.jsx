@@ -1,15 +1,16 @@
 import { useState } from "react";
 import { signOut } from "firebase/auth";
-import { collection, addDoc, deleteDoc, doc, serverTimestamp } from "firebase/firestore";
+import { collection, addDoc, serverTimestamp } from "firebase/firestore";
 import { auth, db } from "../firebase";
 import useGigaStore from "../store/useGigaStore";
 import ShareModal from "../components/ShareModal";
 
 export default function Dashboard() {
-  const { user, maps, setCurrentMapId, subscribeToMap, leaveMap } = useGigaStore();
+  const { user, maps, subscribeToMap, leaveMap, deleteMap } = useGigaStore();
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState("");
   const [selectedIcon, setSelectedIcon] = useState("🗺");
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const [shareMapId, setShareMapId] = useState(null);
 
@@ -26,7 +27,10 @@ export default function Dashboard() {
   };
 
   const createMap = async () => {
-    if (!newName.trim()) return;
+    // In-flight-vakt: dobbel Enter eller dobbeltklikk på treg linje
+    // lagde ellers to identiske kart
+    if (busy || !newName.trim()) return;
+    setBusy(true);
     setError(null);
     try {
       const ref = await addDoc(collection(db, "maps"), {
@@ -51,6 +55,8 @@ export default function Dashboard() {
     } catch (err) {
       console.error("Create map failed:", err);
       setError(`${err.code}: ${err.message}`);
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -159,8 +165,11 @@ export default function Dashboard() {
               style={{ fontSize: 14, color: "var(--text-muted)", padding: 4, borderRadius: 8 }}
               onClick={(e) => {
                 e.stopPropagation();
-                if (window.confirm(`Slette "${map.title}"?`)) {
-                  deleteDoc(doc(db, "maps", map.id));
+                // deleteMap rydder også subkolleksjonene. Firestore
+                // kaskade-sletter aldri selv, så noder/koblinger/ideer
+                // ble ellers liggende igjen for alltid.
+                if (window.confirm(`Slette "${map.title}"? Alle noder, koblinger og ideer slettes permanent.`)) {
+                  deleteMap(map.id);
                 }
               }}
             >
@@ -230,7 +239,7 @@ export default function Dashboard() {
                 ))}
               </div>
               <div style={{ display: "flex", gap: 8 }}>
-                <button className="btn btn-primary" onClick={createMap} style={{ flex: 1 }}>Opprett</button>
+                <button className="btn btn-primary" onClick={createMap} disabled={busy} style={{ flex: 1 }}>{busy ? "Oppretter..." : "Opprett"}</button>
                 <button className="btn btn-ghost" onClick={() => setCreating(false)}>Avbryt</button>
               </div>
               {error && (

@@ -76,10 +76,12 @@ export default function ThemePicker() {
                 textAlign: "left",
               }}
               onMouseEnter={(e) => {
-                if (current !== t.key) e.target.style.background = "var(--bg-card-hover)";
+                // currentTarget, ikke target — ellers skrives bakgrunnen på
+                // barneelementet under musa (bl.a. tema-forhåndsvisningen)
+                if (current !== t.key) e.currentTarget.style.background = "var(--bg-card-hover)";
               }}
               onMouseLeave={(e) => {
-                if (current !== t.key) e.target.style.background = "transparent";
+                if (current !== t.key) e.currentTarget.style.background = "transparent";
               }}
             >
               {/* Preview swatch */}

@@ -1,13 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import useGigaStore from "../store/useGigaStore";
 import { getSwatches } from "../themes";
-
-const TYPE_COLORS = {
-  Avdeling: "#7c3aed", System: "#0284c7", Prosess: "#059669",
-  Person: "#d97706", Mål: "#dc2626", Problem: "#b45309", Idé: "#6366f1", Generell: "#1e3a5f",
-};
-
-const NODE_TYPES = Object.keys(TYPE_COLORS);
+import { NODE_TYPES, TYPE_COLORS, TYPE_ICONS } from "../nodeTypes";
 
 const CONN_COLORS = ["#6366f1", "#8b5cf6", "#06b6d4", "#10b981", "#f59e0b", "#ef4444", "#f472b6", "#94a3b8"];
 
@@ -55,10 +49,7 @@ export default function NodeModal({ nodeId, onClose, readOnly = false }) {
         {/* Header */}
         <div className="modal-header">
           <span style={{ fontSize: 22 }}>
-            {node.type === "Avdeling" ? "🏢" : node.type === "System" ? "⚙️" :
-             node.type === "Prosess" ? "🔄" : node.type === "Person" ? "👤" :
-             node.type === "Mål" ? "🎯" : node.type === "Problem" ? "⚠️" :
-             node.type === "Idé" ? "💡" : "📌"}
+            {TYPE_ICONS[node.type] || TYPE_ICONS.Generell}
           </span>
           {readOnly ? (
             <span className="modal-title-input" style={{ flex: 1, fontSize: 18, fontWeight: 600 }}>
@@ -160,7 +151,7 @@ export default function NodeModal({ nodeId, onClose, readOnly = false }) {
                     key={t}
                     className={`type-pill${node.type === t ? " active" : ""}`}
                     onClick={() => update("type", t)}
-                    style={node.type === t ? { background: TYPE_COLORS[t], borderColor: TYPE_COLORS[t] } : {}}
+                    style={node.type === t ? { background: TYPE_COLORS[t] || "var(--accent)", borderColor: TYPE_COLORS[t] || "var(--accent)" } : {}}
                   >
                     {t}
                   </button>

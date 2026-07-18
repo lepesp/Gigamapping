@@ -45,12 +45,14 @@ export default function PresenceChat() {
     prevMessageCount.current = chatMessages.length;
   }, [chatMessages, collapsed]);
 
-  // Clear unread when expanding
-  useEffect(() => {
-    if (!collapsed) {
-      setHasUnread(false);
-    }
-  }, [collapsed]);
+  // Uleste nullstilles der panelet faktisk åpnes, ikke i en effekt som
+  // kjører etter render (som ga en unødvendig ekstra renderrunde)
+  const toggleCollapsed = useCallback(() => {
+    setCollapsed((prev) => {
+      if (prev) setHasUnread(false); // åpner nå
+      return !prev;
+    });
+  }, []);
 
   const handleSend = useCallback(async () => {
     if (!input.trim() || !sendChatMessage) return;
@@ -97,7 +99,7 @@ export default function PresenceChat() {
           cursor: "pointer",
           flexShrink: 0,
         }}
-        onClick={() => setCollapsed(!collapsed)}
+        onClick={toggleCollapsed}
       >
         <span
           style={{

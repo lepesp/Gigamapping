@@ -45,12 +45,11 @@ function getAccentColor() {
 
 export default function Connections({ nodes, connections, dragLine, readOnly = false }) {
   const { selectedConnectionId, setSelectedConnectionId, deleteConnection } = useGigaStore();
-  const [accent, setAccent] = useState("#6366f1");
+  const [accent, setAccent] = useState(() => getAccentColor());
   const svgRef = useRef(null);
 
   // Watch for accent color changes (theme switches)
   useEffect(() => {
-    setAccent(getAccentColor());
     const observer = new MutationObserver(() => setAccent(getAccentColor()));
     observer.observe(document.documentElement, { attributes: true, attributeFilter: ["style"] });
     return () => observer.disconnect();

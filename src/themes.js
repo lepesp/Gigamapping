@@ -151,6 +151,24 @@ const themes = {
   },
 };
 
+// localStorage kaster SecurityError når nettleseren blokkerer site data.
+// Det skal gi standardtema, ikke krasje appen til en blank side.
+function safeGetItem(key) {
+  try {
+    return window.localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function safeSetItem(key, value) {
+  try {
+    window.localStorage.setItem(key, value);
+  } catch {
+    // Lagring blokkert — temaet gjelder bare denne økten
+  }
+}
+
 export function applyTheme(themeKey) {
   const theme = themes[themeKey];
   if (!theme) return;
@@ -158,11 +176,11 @@ export function applyTheme(themeKey) {
   Object.entries(theme.vars).forEach(([prop, value]) => {
     root.style.setProperty(prop, value);
   });
-  localStorage.setItem("gigamap-theme", themeKey);
+  safeSetItem("gigamap-theme", themeKey);
 }
 
 export function getSavedTheme() {
-  return localStorage.getItem("gigamap-theme") || "soft";
+  return safeGetItem("gigamap-theme") || "soft";
 }
 
 export function getSwatches(themeKey) {

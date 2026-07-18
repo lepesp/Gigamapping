@@ -1,4 +1,4 @@
-import { useEffect, lazy, Suspense } from "react";
+import { useEffect, useRef, lazy, Suspense } from "react";
 import { onAuthStateChanged } from "firebase/auth";
 import {
   collection, onSnapshot, query, where,
@@ -16,7 +16,7 @@ const Dashboard = lazy(() => import("./pages/Dashboard"));
 const MapEditor = lazy(() => import("./pages/MapEditor"));
 
 export default function App() {
-  const { user, setUser, currentMapId, currentPageId, setCurrentPageId, maps, setMaps, pendingInvite, setPendingInvite, redeemInvite, unsubscribeAll } = useGigaStore();
+  const { user, setUser, currentMapId, currentPageId, setCurrentPageId, maps, setMaps, pendingInvite, setPendingInvite, redeemInvite } = useGigaStore();
 
   // Browser back button. Innenfor samme kart navigerer den mellom
   // underkart-nivåene; først når man er på toppnivået går den til dashbordet.
@@ -30,12 +30,13 @@ export default function App() {
       }
       if (currentMapId) {
         e.preventDefault();
-        unsubscribeAll();
+        // closeMap rydder også kartinnholdet, ikke bare lytterne
+        useGigaStore.getState().closeMap();
       }
     };
     window.addEventListener("popstate", handlePopState);
     return () => window.removeEventListener("popstate", handlePopState);
-  }, [currentMapId, setCurrentPageId, unsubscribeAll]);
+  }, [currentMapId, setCurrentPageId]);
 
   // Push history state when opening a map or entering an underkart
   useEffect(() => {
@@ -80,6 +81,10 @@ export default function App() {
   // Auth listener + save user profile to Firestore
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (u) => {
+      // Ved utlogging må hele sesjonen ryddes. Uten dette overlevde både
+      // åpent kart og levende lyttere, så neste konto på samme maskin
+      // landet rett inne i forrige brukers kart.
+      if (!u) useGigaStore.getState().resetSession();
       setUser(u);
       if (u) {
         // Upsert user profile for sharing lookups
@@ -124,7 +129,7 @@ export default function App() {
             });
           }
         }
-      } catch (e) { /* ignore migration errors */ }
+      } catch { /* ignore migration errors */ }
     };
     migrateLegacy();
 
@@ -148,6 +153,27 @@ export default function App() {
 
     return () => unsubMaps();
   }, [user]);
+
+  // Gjenopprett åpent kart fra ?map= ved oppstart, slik at F5 og delte
+  // lenker lander på kartet i stedet for å dumpe brukeren på dashbordet.
+  // Venter til kartlisten er hentet, så vi bare åpner kart man har tilgang til.
+  const restoredFromUrl = useRef(false);
+  useEffect(() => {
+    if (!user || restoredFromUrl.current || maps.length === 0) return;
+    const wanted = new URLSearchParams(window.location.search).get("map");
+    if (!wanted) { restoredFromUrl.current = true; return; }
+    restoredFromUrl.current = true;
+    const store = useGigaStore.getState();
+    if (store.currentMapId === wanted) return;
+    if (maps.some((m) => m.id === wanted)) {
+      const page = new URLSearchParams(window.location.search).get("page");
+      Promise.resolve(store.subscribeToMap(wanted)).then(() => {
+        if (page) useGigaStore.getState().setCurrentPageId(page);
+      });
+    } else {
+      store.setSyncError("Fant ikke kartet i lenken, eller du har ikke tilgang.");
+    }
+  }, [user, maps]);
 
   // Redeem pending invite after login
   useEffect(() => {
