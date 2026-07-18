@@ -7,45 +7,152 @@ export default function ExportModal({ onClose }) {
   const [tab, setTab] = useState("ai"); // "ai" | "json" | "png"
   const [copied, setCopied] = useState(false);
 
+  // Brukertekst skal ikke kunne forfalske eksportens egen struktur
+  // (###-overskrifter o.l.) eller smugle inn instruksjoner til AI-agenten
+  const oneLine = (s) => String(s ?? "").replace(/[\s\u0085\u2028\u2029]+/g, " ").trim();
+  const indentBlock = (s, pad) =>
+    String(s ?? "")
+      .split(/\r\n|[\n\r\u0085\u2028\u2029]/)
+      .map((line) => pad + line)
+      .join("\n");
+
+  // Noder gruppert på nivå: parentId → noder. null = kartets toppnivå.
+  const childrenOf = (parentId) =>
+    nodes.filter((n) => (n.parentId ?? null) === (parentId ?? null));
+
+  const pageCount = nodes.filter((n) => n.isPage).length;
+
+  const maxDepth = (() => {
+    let deepest = 0;
+    const walk = (parentId, depth) => {
+      const kids = childrenOf(parentId);
+      if (kids.length) deepest = Math.max(deepest, depth);
+      kids.forEach((k) => walk(k.id, depth + 1));
+    };
+    walk(null, 0);
+    return deepest;
+  })();
+
   // ── AI export: structured text readable by agent ──
   const buildAIExport = () => {
     const lines = [];
-    lines.push(`# GIGAMAP: ${currentMap?.title || "Uten tittel"}`);
+    lines.push(`# GIGAMAP: ${oneLine(currentMap?.title) || "Uten tittel"}`);
     lines.push(`Eksportert: ${new Date().toLocaleString("nb-NO")}`);
-    lines.push(`Noder: ${nodes.length} | Koblinger: ${connections.length}`);
+    lines.push(
+      `Noder: ${nodes.length} | Koblinger: ${connections.length} | Underkart: ${pageCount} | Nivåer: ${maxDepth + 1}`
+    );
     lines.push("");
-    lines.push("## NODER");
-    nodes.forEach((n) => {
-      lines.push(`\n### [${n.type || "Generell"}] ${n.title}`);
-      lines.push(`ID: ${n.id}`);
-      if (n.notes) lines.push(`Notater: ${n.notes}`);
-      const conns = connections.filter((c) => c.fromNode === n.id || c.toNode === n.id);
-      if (conns.length > 0) {
-        lines.push("Koblinger:");
-        conns.forEach((c) => {
-          const dir = c.fromNode === n.id ? "→" : "←";
-          const other = nodes.find((x) => x.id === (c.fromNode === n.id ? c.toNode : c.fromNode));
-          lines.push(`  ${dir} ${other?.title || "?"} ${c.label ? `(${c.label})` : ""}`);
-        });
-      }
-    });
-    lines.push("\n## KOBLINGER");
-    connections.forEach((c) => {
-      const from = nodes.find((n) => n.id === c.fromNode);
-      const to = nodes.find((n) => n.id === c.toNode);
-      lines.push(`${from?.title || "?"} → ${to?.title || "?"} ${c.label ? `[${c.label}]` : ""}`);
-    });
+    lines.push(
+      "Kartet er hierarkisk: noder merket ⬚ er underkart som inneholder sitt eget lerret."
+    );
+
+    // ── Oversikt: hele treet som innrykket disposisjon ──
+    lines.push("");
+    lines.push("## STRUKTUR");
+    const outline = (parentId, depth) => {
+      childrenOf(parentId).forEach((n) => {
+        const pad = "  ".repeat(depth);
+        const kids = childrenOf(n.id).length;
+        const marker = n.isPage
+          ? ` ⬚ (underkart, ${kids} ${kids === 1 ? "element" : "elementer"})`
+          : "";
+        lines.push(`${pad}- [${oneLine(n.type) || "Generell"}] ${oneLine(n.title)}${marker}`);
+        outline(n.id, depth + 1);
+      });
+    };
+    outline(null, 0);
+
+    // ── Detaljer, ett avsnitt per nivå ──
+    const section = (parentId, trailTitles) => {
+      const levelNodes = childrenOf(parentId);
+      if (levelNodes.length === 0) return;
+
+      const heading = trailTitles.length
+        ? `## UNDERKART: ${trailTitles.join(" › ")}`
+        : "## TOPPNIVÅ";
+      lines.push("");
+      lines.push(heading);
+
+      const levelConns = connections.filter(
+        (c) => (c.parentId ?? null) === (parentId ?? null)
+      );
+
+      levelNodes.forEach((n) => {
+        const kids = childrenOf(n.id).length;
+        const marker = n.isPage ? " ⬚ UNDERKART" : "";
+        lines.push(`\n### [${oneLine(n.type) || "Generell"}] ${oneLine(n.title)}${marker}`);
+        lines.push(`ID: ${n.id}`);
+        if (n.isPage) {
+          lines.push(
+            `Underkart: ${kids} ${kids === 1 ? "element" : "elementer"} (se eget avsnitt nedenfor)`
+          );
+        }
+        if (n.notes) {
+          lines.push("Notater:");
+          lines.push(indentBlock(n.notes, "    "));
+        }
+        const conns = levelConns.filter((c) => c.fromNode === n.id || c.toNode === n.id);
+        if (conns.length > 0) {
+          lines.push("Koblinger:");
+          conns.forEach((c) => {
+            const dir = c.fromNode === n.id ? "→" : "←";
+            const other = nodes.find(
+              (x) => x.id === (c.fromNode === n.id ? c.toNode : c.fromNode)
+            );
+            lines.push(
+              `  ${dir} ${oneLine(other?.title) || "?"} ${c.label ? `(${oneLine(c.label)})` : ""}`
+            );
+          });
+        }
+      });
+
+      // Rekurser ned i hvert underkart på dette nivået
+      levelNodes.forEach((n) => {
+        if (childrenOf(n.id).length > 0) {
+          section(n.id, [...trailTitles, oneLine(n.title) || "Uten tittel"]);
+        }
+      });
+    };
+    section(null, []);
+
     return lines.join("\n");
   };
 
   const buildJSONExport = () => {
+    // Bygg et ekte nestet tre, så strukturen er maskinlesbar
+    const buildTree = (parentId) =>
+      childrenOf(parentId).map((n) => ({
+        id: n.id,
+        title: n.title,
+        type: n.type,
+        notes: n.notes,
+        color: n.color,
+        isPage: !!n.isPage,
+        x: Math.round(n.x), y: Math.round(n.y),
+        w: Math.round(n.w), h: Math.round(n.h),
+        children: buildTree(n.id),
+      }));
+
     return JSON.stringify({
       map: { id: currentMapId, title: currentMap?.title },
-      nodes: nodes.map(({ id, title, type, notes, color, x, y, w, h }) => ({
-        id, title, type, notes, color, x: Math.round(x), y: Math.round(y), w: Math.round(w), h: Math.round(h),
+      stats: {
+        nodes: nodes.length,
+        connections: connections.length,
+        pages: pageCount,
+        depth: maxDepth + 1,
+      },
+      // Hierarkisk visning
+      tree: buildTree(null),
+      // Flat visning med parentId — enklere for import/verktøy
+      nodes: nodes.map(({ id, title, type, notes, color, x, y, w, h, parentId, isPage }) => ({
+        id, title, type, notes, color,
+        parentId: parentId ?? null,
+        isPage: !!isPage,
+        x: Math.round(x), y: Math.round(y), w: Math.round(w), h: Math.round(h),
       })),
-      connections: connections.map(({ id, fromNode, toNode, label, color, bidirectional }) => ({
+      connections: connections.map(({ id, fromNode, toNode, label, color, bidirectional, parentId }) => ({
         id, fromNode, toNode, label, color, bidirectional,
+        parentId: parentId ?? null,
       })),
     }, null, 2);
   };

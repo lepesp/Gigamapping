@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import useGigaStore from "../store/useGigaStore";
 import Toolbar from "../components/Toolbar";
 import GigaNode from "../components/GigaNode";
@@ -18,9 +18,30 @@ export default function MapEditor() {
     openModalNodeId, setOpenModalNodeId,
     addNode, addConnection, promoteIdea,
     currentMapId, userRole,
+    currentPageId, enterPage,
   } = useGigaStore();
 
   const isViewer = userRole === "viewer";
+
+  // ── Underkart: lerretet viser bare det nivået man står i ──
+  const pageId = currentPageId ?? null;
+  const visibleNodes = useMemo(
+    () => nodes.filter((n) => (n.parentId ?? null) === pageId),
+    [nodes, pageId]
+  );
+  const visibleConnections = useMemo(
+    () => connections.filter((c) => (c.parentId ?? null) === pageId),
+    [connections, pageId]
+  );
+  // Antall elementer rett under hver underkart-node, til telleren på noden
+  const childCounts = useMemo(() => {
+    const counts = {};
+    nodes.forEach((n) => {
+      const p = n.parentId ?? null;
+      if (p) counts[p] = (counts[p] || 0) + 1;
+    });
+    return counts;
+  }, [nodes]);
 
   const canvasRef = useRef(null);
   const isPanning = useRef(false);
@@ -192,14 +213,14 @@ export default function MapEditor() {
         >
           {/* SVG layer for connections */}
           <Connections
-            nodes={nodes}
-            connections={connections}
+            nodes={visibleNodes}
+            connections={visibleConnections}
             dragLine={dragLine}
             zoom={zoom}
           />
 
           {/* Nodes */}
-          {nodes.map((node) => (
+          {visibleNodes.map((node) => (
             <GigaNode
               key={node.id}
               node={node}
@@ -210,6 +231,8 @@ export default function MapEditor() {
               onOpen={() => setOpenModalNodeId(node.id)}
               onStartConnect={startConnecting}
               onFinishConnect={finishConnecting}
+              onEnterPage={enterPage}
+              childCount={childCounts[node.id] || 0}
               zoom={zoom}
               readOnly={isViewer}
             />
@@ -224,8 +247,8 @@ export default function MapEditor() {
           <button className="btn btn-ghost btn-icon" title="Tilpass skjerm" onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }); }}>⊡</button>
         </div>
 
-        {/* Mini map */}
-        <MiniMap nodes={nodes} pan={pan} zoom={zoom} canvasRef={canvasRef} />
+        {/* Mini map — viser nivået man står i */}
+        <MiniMap nodes={visibleNodes} pan={pan} zoom={zoom} canvasRef={canvasRef} />
 
         {/* Idea brainstorm panel — hidden for viewers */}
         {!isViewer && <IdeaPanel pan={pan} zoom={zoom} canvasRef={canvasRef} />}
@@ -241,15 +264,17 @@ export default function MapEditor() {
         )}
 
         {/* Hint */}
-        {nodes.length === 0 && (
+        {visibleNodes.length === 0 && (
           <div style={{
             position: "absolute", top: "50%", left: "50%",
             transform: "translate(-50%,-50%)",
             textAlign: "center", pointerEvents: "none",
           }}>
-            <div style={{ fontSize: 48, marginBottom: 16 }}>🗺</div>
+            <div style={{ fontSize: 48, marginBottom: 16 }}>{pageId ? "📄" : "🗺"}</div>
             <div style={{ color: "var(--text-secondary)", fontSize: 16, fontFamily: "Outfit" }}>
-              Dobbeltklikk for å legge til en node
+              {pageId
+                ? "Tomt underkart – dobbeltklikk for å legge til en node"
+                : "Dobbeltklikk for å legge til en node"}
             </div>
             <div style={{ color: "var(--text-muted)", fontSize: 13, marginTop: 8 }}>
               Dra for å flytte canvas · Scroll for å zoome

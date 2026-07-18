@@ -16,8 +16,49 @@ import {
   orderBy,
   limit,
   setDoc,
+  writeBatch,
 } from "firebase/firestore";
 import { db } from "../firebase";
+
+// Alle etterkommere av en node (hele undertreet), bredde-først.
+// Nodene ligger flatt i maps/{id}/nodes og knyttes sammen med parentId.
+export function descendantIds(nodes, rootId) {
+  const byParent = new Map();
+  nodes.forEach((n) => {
+    const p = n.parentId ?? null;
+    if (!byParent.has(p)) byParent.set(p, []);
+    byParent.get(p).push(n.id);
+  });
+  const out = [];
+  const queue = [rootId];
+  // seen beskytter mot sykliske parentId-kjeder — uten den ville korrupt
+  // data gitt en evig løkke som fryser hele fanen
+  const seen = new Set([rootId]);
+  while (queue.length) {
+    const id = queue.shift();
+    for (const childId of byParent.get(id) || []) {
+      if (seen.has(childId)) continue;
+      seen.add(childId);
+      out.push(childId);
+      queue.push(childId);
+    }
+  }
+  return out;
+}
+
+// Stien fra toppnivået ned til et underkart, for brødsmuler
+export function pageTrail(nodes, pageId) {
+  const byId = new Map(nodes.map((n) => [n.id, n]));
+  const trail = [];
+  let cur = pageId;
+  const guard = new Set(); // beskytter mot sykliske parentId-kjeder
+  while (cur && byId.has(cur) && !guard.has(cur)) {
+    guard.add(cur);
+    trail.unshift(byId.get(cur));
+    cur = byId.get(cur).parentId ?? null;
+  }
+  return trail;
+}
 
 const useGigaStore = create((set, get) => ({
   // Auth
@@ -27,6 +68,25 @@ const useGigaStore = create((set, get) => ({
   // Current map
   currentMapId: null,
   setCurrentMapId: (id) => set({ currentMapId: id }),
+
+  // --- Underkart ---
+  // Hvilket underkart man står i. null = kartets toppnivå.
+  // Noder og koblinger bærer parentId som peker på underkart-noden de bor i.
+  currentPageId: null,
+  setCurrentPageId: (id) => set({ currentPageId: id ?? null }),
+
+  // Gå inn i et underkart: nullstill valg og viewport så man ikke
+  // drar med seg markering eller panorering fra nivået over.
+  enterPage: (nodeId) =>
+    set({
+      currentPageId: nodeId,
+      selectedNodeId: null,
+      selectedConnectionId: null,
+      connectingFrom: null,
+      openModalNodeId: null,
+      pan: { x: 0, y: 0 },
+      zoom: 1,
+    }),
 
   // User role for current map
   userRole: null, // 'owner' | 'editor' | 'viewer' | null
@@ -91,14 +151,42 @@ const useGigaStore = create((set, get) => ({
 
   // --- Node actions ---
   addNode: async (nodeData) => {
-    const { currentMapId } = get();
+    const { currentMapId, currentPageId } = get();
     if (!currentMapId) return;
     const ref = collection(db, "maps", currentMapId, "nodes");
     await addDoc(ref, {
+      // Noden fødes på nivået man står i
+      parentId: currentPageId ?? null,
       ...nodeData,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     });
+  },
+
+  // Gjør en node om til et underkart (eksplisitt valg — vanlige noder
+  // kan ikke åpnes). Innholdet opprettes først når man legger noe der.
+  makePage: async (nodeId) => {
+    const { currentMapId } = get();
+    if (!currentMapId) return;
+    await updateDoc(doc(db, "maps", currentMapId, "nodes", nodeId), {
+      isPage: true,
+      updatedAt: serverTimestamp(),
+    });
+  },
+
+  // Fjern underkart-status. Nekter hvis underkartet har innhold, slik at
+  // man ikke gjør innhold uneåbart ved et uhell.
+  unmakePage: async (nodeId) => {
+    const { currentMapId, nodes, currentPageId } = get();
+    if (!currentMapId) return false;
+    const hasChildren = nodes.some((n) => (n.parentId ?? null) === nodeId);
+    if (hasChildren) return false;
+    await updateDoc(doc(db, "maps", currentMapId, "nodes", nodeId), {
+      isPage: false,
+      updatedAt: serverTimestamp(),
+    });
+    if (currentPageId === nodeId) set({ currentPageId: null });
+    return true;
   },
 
   updateNode: async (nodeId, updates) => {
@@ -108,25 +196,56 @@ const useGigaStore = create((set, get) => ({
     await updateDoc(ref, { ...updates, updatedAt: serverTimestamp() });
   },
 
+  // Sletter noden OG hele underkartet under den (alle nivåer), pluss
+  // koblinger som rører noen av dem. Alt går i batch så man ikke kan
+  // ende opp med foreldreløst innhold hvis noe avbrytes underveis.
   deleteNode: async (nodeId) => {
-    const { currentMapId, connections } = get();
+    const { currentMapId, nodes, connections, currentPageId } = get();
     if (!currentMapId) return;
-    await deleteDoc(doc(db, "maps", currentMapId, "nodes", nodeId));
-    // Also delete connections referencing this node
-    const relatedConns = connections.filter(
-      (c) => c.fromNode === nodeId || c.toNode === nodeId
+
+    const doomed = [nodeId, ...descendantIds(nodes, nodeId)];
+    const doomedSet = new Set(doomed);
+    const doomedConns = connections.filter(
+      (c) =>
+        doomedSet.has(c.fromNode) ||
+        doomedSet.has(c.toNode) ||
+        doomedSet.has(c.parentId ?? null)
     );
-    for (const c of relatedConns) {
-      await deleteDoc(doc(db, "maps", currentMapId, "connections", c.id));
+
+    const refs = [
+      ...doomed.map((id) => doc(db, "maps", currentMapId, "nodes", id)),
+      ...doomedConns.map((c) => doc(db, "maps", currentMapId, "connections", c.id)),
+    ];
+
+    // Batch-grensen er 500 operasjoner
+    for (let i = 0; i < refs.length; i += 450) {
+      const batch = writeBatch(db);
+      refs.slice(i, i + 450).forEach((r) => batch.delete(r));
+      await batch.commit();
+    }
+
+    // Sto man inne i noe som nettopp ble slettet, må man ut
+    if (currentPageId && doomedSet.has(currentPageId)) {
+      const deletedRoot = nodes.find((n) => n.id === nodeId);
+      set({ currentPageId: deletedRoot?.parentId ?? null });
     }
   },
 
+  // Hvor mange elementer ligger under en node (hele undertreet)?
+  // Brukes til å advare før sletting og til telleren på noden.
+  descendantCount: (nodeId) => descendantIds(get().nodes, nodeId).length,
+
   // --- Connection actions ---
   addConnection: async (connData) => {
-    const { currentMapId } = get();
+    const { currentMapId, currentPageId } = get();
     if (!currentMapId) return;
     const ref = collection(db, "maps", currentMapId, "connections");
-    await addDoc(ref, { ...connData, createdAt: serverTimestamp() });
+    await addDoc(ref, {
+      // Koblingen lever på samme nivå som nodene den binder sammen
+      parentId: currentPageId ?? null,
+      ...connData,
+      createdAt: serverTimestamp(),
+    });
   },
 
   updateConnection: async (connId, updates) => {
@@ -162,12 +281,13 @@ const useGigaStore = create((set, get) => ({
   },
 
   promoteIdea: async (ideaId, x, y) => {
-    const { currentMapId, ideas } = get();
+    const { currentMapId, currentPageId, ideas } = get();
     if (!currentMapId) return;
     const idea = ideas.find((i) => i.id === ideaId);
     if (!idea) return;
-    // Create a real node from the idea
+    // Create a real node from the idea, på nivået man står i
     await addDoc(collection(db, "maps", currentMapId, "nodes"), {
+      parentId: currentPageId ?? null,
       x, y, w: 220, h: 110,
       title: idea.text,
       notes: "",
@@ -286,7 +406,7 @@ const useGigaStore = create((set, get) => ({
       async (snap) => {
         if (!snap.exists()) {
           // Map was deleted or user lost access
-          set({ currentMapId: null, currentMapData: null, userRole: null });
+          set({ currentMapId: null, currentPageId: null, currentMapData: null, userRole: null });
           return;
         }
         const data = { id: snap.id, ...snap.data() };
@@ -381,6 +501,8 @@ const useGigaStore = create((set, get) => ({
 
     set({
       currentMapId: mapId,
+      // Alltid start på kartets toppnivå når et kart åpnes
+      currentPageId: null,
       unsubscribeNodes: unsubNodes,
       unsubscribeConnections: unsubConns,
       unsubscribeIdeas: unsubIdeas,

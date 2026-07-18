@@ -15,11 +15,18 @@ const Dashboard = lazy(() => import("./pages/Dashboard"));
 const MapEditor = lazy(() => import("./pages/MapEditor"));
 
 export default function App() {
-  const { user, setUser, currentMapId, maps, setMaps, pendingInvite, setPendingInvite, redeemInvite, unsubscribeAll } = useGigaStore();
+  const { user, setUser, currentMapId, currentPageId, setCurrentPageId, maps, setMaps, pendingInvite, setPendingInvite, redeemInvite, unsubscribeAll } = useGigaStore();
 
-  // Browser back button: go back to dashboard instead of leaving the app
+  // Browser back button. Innenfor samme kart navigerer den mellom
+  // underkart-nivåene; først når man er på toppnivået går den til dashbordet.
   useEffect(() => {
     const handlePopState = (e) => {
+      const state = e.state || {};
+      if (currentMapId && state.mapId === currentMapId) {
+        // Samme kart — bare bytt nivå
+        setCurrentPageId(state.pageId ?? null);
+        return;
+      }
       if (currentMapId) {
         e.preventDefault();
         unsubscribeAll();
@@ -27,21 +34,27 @@ export default function App() {
     };
     window.addEventListener("popstate", handlePopState);
     return () => window.removeEventListener("popstate", handlePopState);
-  }, [currentMapId]);
+  }, [currentMapId, setCurrentPageId, unsubscribeAll]);
 
-  // Push history state when opening a map
+  // Push history state when opening a map or entering an underkart
   useEffect(() => {
     if (currentMapId) {
-      window.history.pushState({ mapId: currentMapId }, "", `?map=${currentMapId}`);
+      const url = `?map=${currentMapId}${currentPageId ? `&page=${currentPageId}` : ""}`;
+      window.history.pushState(
+        { mapId: currentMapId, pageId: currentPageId ?? null },
+        "",
+        url
+      );
     } else {
       // Clean URL when back on dashboard
       const url = new URL(window.location);
-      if (url.searchParams.has("map")) {
+      if (url.searchParams.has("map") || url.searchParams.has("page")) {
         url.searchParams.delete("map");
+        url.searchParams.delete("page");
         window.history.replaceState({}, "", url.pathname + url.search || "/");
       }
     }
-  }, [currentMapId]);
+  }, [currentMapId, currentPageId]);
 
   // Load saved theme on mount + check for invite token in URL
   useEffect(() => {

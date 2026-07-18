@@ -6,8 +6,10 @@ const NODE_TYPES = ["Generell", "Avdeling", "System", "Prosess", "Person", "Mål
 export default function GigaNode({
   node, isSelected, isConnecting, isConnectingFrom,
   onSelect, onOpen, onStartConnect, onFinishConnect, zoom,
+  onEnterPage, childCount = 0,
   readOnly = false,
 }) {
+  const isPage = !!node.isPage;
   const { updateNode } = useGigaStore();
   const nodeRef = useRef(null);
   const dragging = useRef(false);
@@ -112,7 +114,7 @@ export default function GigaNode({
   return (
     <div
       ref={nodeRef}
-      className={`node${isSelected ? " selected" : ""}${readOnly ? " readonly" : ""}`}
+      className={`node${isSelected ? " selected" : ""}${readOnly ? " readonly" : ""}${isPage ? " node-page" : ""}`}
       style={{
         left: node.x,
         top: node.y,
@@ -138,6 +140,16 @@ export default function GigaNode({
         >
           {node.type || "Generell"}
         </span>
+        {isPage && (
+          <span
+            className="node-page-badge"
+            title={childCount > 0
+              ? `Underkart med ${childCount} ${childCount === 1 ? "element" : "elementer"}`
+              : "Tomt underkart"}
+          >
+            ⬚ {childCount > 0 ? childCount : "tomt"}
+          </span>
+        )}
         {editingTitle && !readOnly ? (
           <input
             className="node-title"
@@ -164,7 +176,9 @@ export default function GigaNode({
         {node.notes ? (
           <p className="node-notes">{node.notes}</p>
         ) : (
-          <p className="node-notes" style={{ opacity: 0.35 }}>Dobbeltklikk for å åpne...</p>
+          <p className="node-notes" style={{ opacity: 0.35 }}>
+            {isPage ? "Underkart – trykk for å gå inn..." : "Dobbeltklikk for å åpne..."}
+          </p>
         )}
       </div>
 
@@ -179,9 +193,20 @@ export default function GigaNode({
             {isConnectingFrom ? "●" : "⊕"}
           </button>
         )}
-        <button className="node-open-btn" onClick={(e) => { e.stopPropagation(); onOpen(); }}>
-          {readOnly ? "Vis ↗" : "Åpne ↗"}
-        </button>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, marginLeft: "auto" }}>
+          {isPage && (
+            <button
+              className="node-page-btn"
+              onClick={(e) => { e.stopPropagation(); onEnterPage?.(node.id); }}
+              title="Åpne underkartet til denne noden"
+            >
+              Åpne underkart ↘
+            </button>
+          )}
+          <button className="node-open-btn" onClick={(e) => { e.stopPropagation(); onOpen(); }}>
+            {readOnly ? "Vis ↗" : "Detaljer"}
+          </button>
+        </div>
       </div>
 
       {/* Resize handle (hidden for readOnly) */}

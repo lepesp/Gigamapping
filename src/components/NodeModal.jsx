@@ -12,9 +12,14 @@ const NODE_TYPES = Object.keys(TYPE_COLORS);
 const CONN_COLORS = ["#6366f1", "#8b5cf6", "#06b6d4", "#10b981", "#f59e0b", "#ef4444", "#f472b6", "#94a3b8"];
 
 export default function NodeModal({ nodeId, onClose, readOnly = false }) {
-  const { nodes, connections, updateNode, deleteNode, updateConnection } = useGigaStore();
+  const {
+    nodes, connections, updateNode, deleteNode, updateConnection,
+    makePage, unmakePage, enterPage, descendantCount,
+  } = useGigaStore();
   const node = nodes.find((n) => n.id === nodeId);
   const nodeConns = connections.filter((c) => c.fromNode === nodeId || c.toNode === nodeId);
+  // Antall elementer rett under noden (nivået inne i underkartet)
+  const childCount = nodes.filter((n) => (n.parentId ?? null) === nodeId).length;
 
   // Local editing state to prevent cursor jumping from Firestore snapshots
   const [localTitle, setLocalTitle] = useState(node?.title || "");
@@ -93,6 +98,55 @@ export default function NodeModal({ nodeId, onClose, readOnly = false }) {
                 placeholder="Beskriv denne noden – hva skjer her, hvem er ansvarlig, hvilke systemer er involvert..."
                 style={{ minHeight: 120 }}
               />
+            )}
+          </div>
+
+          {/* Underkart */}
+          <div className="modal-section">
+            <label>⬚ Underkart</label>
+            {node.isPage ? (
+              <div className="page-box">
+                <div className="page-box-text">
+                  {childCount > 0
+                    ? `Denne noden har et underkart med ${childCount} ${childCount === 1 ? "element" : "elementer"}.`
+                    : "Denne noden er et underkart, men er tomt ennå."}
+                </div>
+                <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+                  <button
+                    className="btn btn-primary"
+                    onClick={() => { enterPage(nodeId); onClose(); }}
+                  >
+                    Gå inn ↘
+                  </button>
+                  {!readOnly && childCount === 0 && (
+                    <button
+                      className="btn btn-ghost"
+                      onClick={() => unmakePage(nodeId)}
+                      title="Gjør om til en vanlig node igjen"
+                    >
+                      Angre
+                    </button>
+                  )}
+                </div>
+              </div>
+            ) : readOnly ? (
+              <div className="page-box">
+                <div className="page-box-text">Denne noden har ikke noe underkart.</div>
+              </div>
+            ) : (
+              <div className="page-box">
+                <div className="page-box-text">
+                  Gjør noden om til et underkart hvis den rommer en hel prosess
+                  som fortjener sitt eget lerret.
+                </div>
+                <button
+                  className="btn btn-ghost"
+                  style={{ flexShrink: 0 }}
+                  onClick={() => makePage(nodeId)}
+                >
+                  Gjør om til underkart
+                </button>
+              </div>
             )}
           </div>
 
@@ -187,7 +241,19 @@ export default function NodeModal({ nodeId, onClose, readOnly = false }) {
           {!readOnly && (
             <button
               className="btn btn-danger"
-              onClick={() => { deleteNode(nodeId); onClose(); }}
+              onClick={() => {
+                // Sletting tar hele underkartet under noden — advar først
+                const count = descendantCount(nodeId);
+                if (count > 0) {
+                  const ord = count === 1 ? "element" : "elementer";
+                  const ok = window.confirm(
+                    `"${node.title || "Noden"}" har et underkart med ${count} ${ord}.\n\nSletter du noden, slettes alt innholdet under den også. Fortsette?`
+                  );
+                  if (!ok) return;
+                }
+                deleteNode(nodeId);
+                onClose();
+              }}
             >
               🗑 Slett node
             </button>

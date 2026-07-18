@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { signOut } from "firebase/auth";
 import { doc, updateDoc, serverTimestamp } from "firebase/firestore";
 import { auth, db } from "../firebase";
-import useGigaStore from "../store/useGigaStore";
+import useGigaStore, { pageTrail } from "../store/useGigaStore";
 import ExportModal from "./ExportModal";
 import ThemePicker from "./ThemePicker";
 import ShareModal from "./ShareModal";
@@ -15,7 +15,25 @@ export default function Toolbar() {
     selectedNodeId, deleteNode,
     selectedConnectionId, deleteConnection,
     userRole,
+    currentPageId, setCurrentPageId, descendantCount,
   } = useGigaStore();
+
+  // Stien fra kartets toppnivå ned hit — brukes til brødsmulene
+  const trail = pageTrail(nodes, currentPageId);
+
+  // Sletting tar hele underkartet, så vi advarer med hvor mye det gjelder
+  const handleDeleteNode = () => {
+    const node = nodes.find((n) => n.id === selectedNodeId);
+    const count = descendantCount(selectedNodeId);
+    if (count > 0) {
+      const ord = count === 1 ? "element" : "elementer";
+      const ok = window.confirm(
+        `"${node?.title || "Noden"}" har et underkart med ${count} ${ord}.\n\nSletter du noden, slettes alt innholdet under den også. Fortsette?`
+      );
+      if (!ok) return;
+    }
+    deleteNode(selectedNodeId);
+  };
 
   const currentMap = maps.find((m) => m.id === currentMapId);
   const [showExport, setShowExport] = useState(false);
@@ -106,6 +124,44 @@ export default function Toolbar() {
           readOnly={isViewer}
         />
 
+        {/* Brødsmuler — vises bare når man står inne i et underkart */}
+        {trail.length > 0 && (
+          <nav className="breadcrumb" aria-label="Sti">
+            <button
+              className="breadcrumb-crumb"
+              onClick={() => setCurrentPageId(null)}
+              title="Tilbake til kartets toppnivå"
+            >
+              Toppnivå
+            </button>
+            {trail.map((n, i) => (
+              <span key={n.id} style={{ display: "contents" }}>
+                <span className="breadcrumb-sep">›</span>
+                {i === trail.length - 1 ? (
+                  <span className="breadcrumb-crumb current" aria-current="page">
+                    {n.title || "Uten tittel"}
+                  </span>
+                ) : (
+                  <button
+                    className="breadcrumb-crumb"
+                    onClick={() => setCurrentPageId(n.id)}
+                    title={`Gå til ${n.title || "Uten tittel"}`}
+                  >
+                    {n.title || "Uten tittel"}
+                  </button>
+                )}
+              </span>
+            ))}
+            <button
+              className="btn btn-ghost btn-icon breadcrumb-up"
+              onClick={() => setCurrentPageId(trail[trail.length - 1].parentId ?? null)}
+              title="Opp ett nivå"
+            >
+              ↰
+            </button>
+          </nav>
+        )}
+
         <div className="toolbar-sep" />
 
         {/* Add node — hidden for viewers */}
@@ -128,7 +184,7 @@ export default function Toolbar() {
         {!isViewer && selectedNodeId && (
           <button
             className="btn btn-danger"
-            onClick={() => deleteNode(selectedNodeId)}
+            onClick={handleDeleteNode}
             title="Slett valgt node"
           >
             🗑 Slett node
