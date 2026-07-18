@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import useGigaStore from "../store/useGigaStore";
 
 const CANVAS_W = 8000;
@@ -44,13 +44,13 @@ function getAccentColor() {
 }
 
 export default function Connections({ nodes, connections, dragLine }) {
-  const { selectedConnectionId, setSelectedConnectionId, deleteConnection, updateConnection } = useGigaStore();
-  const [accent, setAccent] = useState("#6366f1");
-  const svgRef = useRef(null);
+  const selectedConnectionId = useGigaStore((s) => s.selectedConnectionId);
+  const setSelectedConnectionId = useGigaStore((s) => s.setSelectedConnectionId);
+  const deleteConnection = useGigaStore((s) => s.deleteConnection);
+  const [accent, setAccent] = useState(() => getAccentColor());
 
   // Watch for accent color changes (theme switches)
   useEffect(() => {
-    setAccent(getAccentColor());
     const observer = new MutationObserver(() => setAccent(getAccentColor()));
     observer.observe(document.documentElement, { attributes: true, attributeFilter: ["style"] });
     return () => observer.disconnect();
@@ -65,7 +65,6 @@ export default function Connections({ nodes, connections, dragLine }) {
 
   return (
     <svg
-      ref={svgRef}
       className="connections-svg"
       style={{ width: CANVAS_W, height: CANVAS_H, position: "absolute", top: 0, left: 0, overflow: "visible" }}
     >
@@ -99,13 +98,15 @@ export default function Connections({ nodes, connections, dragLine }) {
 
         return (
           <g key={conn.id}>
-            {/* Invisible wider hit area */}
+            {/* Invisible wider hit area. .connections-svg har pointer-events:
+                none, som arves — uten eksplisitt reaktivering her kan
+                koblinger aldri klikkes/velges. */}
             <path
               d={path}
               stroke="transparent"
               strokeWidth={16}
               fill="none"
-              style={{ cursor: "pointer" }}
+              style={{ cursor: "pointer", pointerEvents: "stroke" }}
               onClick={(e) => {
                 e.stopPropagation();
                 setSelectedConnectionId(isSelected ? null : conn.id);
@@ -121,6 +122,10 @@ export default function Connections({ nodes, connections, dragLine }) {
               opacity={0.75}
               markerEnd={`url(#${markerId})`}
               style={{ filter: isSelected ? `drop-shadow(0 0 6px ${color})` : undefined }}
+              onClick={(e) => {
+                e.stopPropagation();
+                setSelectedConnectionId(isSelected ? null : conn.id);
+              }}
             />
             {/* Label */}
             {conn.label && (
@@ -136,7 +141,7 @@ export default function Connections({ nodes, connections, dragLine }) {
             {/* Delete button when selected */}
             {isSelected && (
               <g
-                style={{ cursor: "pointer" }}
+                style={{ cursor: "pointer", pointerEvents: "all" }}
                 onClick={(e) => { e.stopPropagation(); deleteConnection(conn.id); setSelectedConnectionId(null); }}
               >
                 <circle cx={midX} cy={midY} r={12} fill="var(--bg-card)" stroke="var(--danger)" strokeWidth={1.5} />

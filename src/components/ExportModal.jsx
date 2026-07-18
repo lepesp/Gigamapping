@@ -1,31 +1,50 @@
 import { useState } from "react";
 import useGigaStore from "../store/useGigaStore";
 
+// Brukertekst må ikke kunne forfalske eksportens egen struktur
+// (###-overskrifter osv.) eller smugle inn instruksjoner på toppnivå:
+// titler/labels presses til én linje, notater rykkes inn som blokk.
+const oneLine = (s) => String(s ?? "").replace(/[\s\u0085]+/g, " ").trim();
+// Normaliser ALLE linjeskiftformer (\r\n, \r, NEL U+0085, U+2028/U+2029) — ellers kan
+// limt inn tekst smugle uinnrykkede linjer forbi innrykket
+const indentBlock = (s) =>
+  String(s ?? "")
+    .split(/\r\n|[\n\r\u0085\u2028\u2029]/)
+    .map((line) => "    " + line)
+    .join("\n");
+
 export default function ExportModal({ onClose }) {
-  const { nodes, connections, maps, currentMapId } = useGigaStore();
-  const currentMap = maps.find((m) => m.id === currentMapId);
+  const nodes = useGigaStore((s) => s.nodes);
+  const connections = useGigaStore((s) => s.connections);
+  const currentMap = useGigaStore((s) =>
+    s.maps.find((m) => m.id === s.currentMapId)
+  );
+  const currentMapId = useGigaStore((s) => s.currentMapId);
   const [tab, setTab] = useState("ai"); // "ai" | "json" | "png"
-  const [copied, setCopied] = useState(false);
+  const [copyState, setCopyState] = useState("idle"); // "idle" | "ok" | "fail"
 
   // ── AI export: structured text readable by agent ──
   const buildAIExport = () => {
     const lines = [];
-    lines.push(`# GIGAMAP: ${currentMap?.title || "Uten tittel"}`);
+    lines.push(`# GIGAMAP: ${oneLine(currentMap?.title) || "Uten tittel"}`);
     lines.push(`Eksportert: ${new Date().toLocaleString("nb-NO")}`);
     lines.push(`Noder: ${nodes.length} | Koblinger: ${connections.length}`);
     lines.push("");
     lines.push("## NODER");
     nodes.forEach((n) => {
-      lines.push(`\n### [${n.type || "Generell"}] ${n.title}`);
+      lines.push(`\n### [${oneLine(n.type) || "Generell"}] ${oneLine(n.title)}`);
       lines.push(`ID: ${n.id}`);
-      if (n.notes) lines.push(`Notater: ${n.notes}`);
+      if (n.notes) {
+        lines.push("Notater:");
+        lines.push(indentBlock(n.notes));
+      }
       const conns = connections.filter((c) => c.fromNode === n.id || c.toNode === n.id);
       if (conns.length > 0) {
         lines.push("Koblinger:");
         conns.forEach((c) => {
           const dir = c.fromNode === n.id ? "→" : "←";
           const other = nodes.find((x) => x.id === (c.fromNode === n.id ? c.toNode : c.fromNode));
-          lines.push(`  ${dir} ${other?.title || "?"} ${c.label ? `(${c.label})` : ""}`);
+          lines.push(`  ${dir} ${oneLine(other?.title) || "?"} ${c.label ? `(${oneLine(c.label)})` : ""}`);
         });
       }
     });
@@ -33,7 +52,7 @@ export default function ExportModal({ onClose }) {
     connections.forEach((c) => {
       const from = nodes.find((n) => n.id === c.fromNode);
       const to = nodes.find((n) => n.id === c.toNode);
-      lines.push(`${from?.title || "?"} → ${to?.title || "?"} ${c.label ? `[${c.label}]` : ""}`);
+      lines.push(`${oneLine(from?.title) || "?"} → ${oneLine(to?.title) || "?"} ${c.label ? `[${oneLine(c.label)}]` : ""}`);
     });
     return lines.join("\n");
   };
@@ -52,10 +71,17 @@ export default function ExportModal({ onClose }) {
 
   const content = tab === "ai" ? buildAIExport() : buildJSONExport();
 
-  const copyToClipboard = () => {
-    navigator.clipboard.writeText(content);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  const copyToClipboard = async () => {
+    try {
+      await navigator.clipboard.writeText(content);
+      setCopyState("ok");
+    } catch (err) {
+      // navigator.clipboard finnes ikke på usikret opprinnelse, og
+      // writeText kan avvises — ikke vis «Kopiert!» på en feilet kopi
+      console.error("Kopiering feilet:", err);
+      setCopyState("fail");
+    }
+    setTimeout(() => setCopyState("idle"), 2500);
   };
 
   const downloadFile = () => {
@@ -132,7 +158,9 @@ export default function ExportModal({ onClose }) {
 
               <div style={{ display: "flex", gap: 8 }}>
                 <button className="btn btn-primary" onClick={copyToClipboard} style={{ flex: 1 }}>
-                  {copied ? "✓ Kopiert!" : "📋 Kopier til utklippstavle"}
+                  {copyState === "ok" && "✓ Kopiert!"}
+                  {copyState === "fail" && "⚠ Kopiering feilet – marker teksten manuelt"}
+                  {copyState === "idle" && "📋 Kopier til utklippstavle"}
                 </button>
                 <button className="btn btn-ghost" onClick={downloadFile}>
                   ↓ Last ned fil

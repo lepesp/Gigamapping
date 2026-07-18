@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
+import { useShallow } from "zustand/react/shallow";
 import useGigaStore from "../store/useGigaStore";
 import Toolbar from "../components/Toolbar";
 import GigaNode from "../components/GigaNode";
@@ -12,29 +13,51 @@ export default function MapEditor() {
   const {
     nodes, connections, zoom, setZoom, pan, setPan,
     selectedNodeId, setSelectedNodeId,
-    selectedConnectionId, setSelectedConnectionId,
+    setSelectedConnectionId,
     connectingFrom, setConnectingFrom,
     openModalNodeId, setOpenModalNodeId,
-    addNode, addConnection, promoteIdea,
-    currentMapId,
-  } = useGigaStore();
+    addNode, addConnection, promoteIdea, fitToScreen,
+  } = useGigaStore(
+    useShallow((s) => ({
+      nodes: s.nodes,
+      connections: s.connections,
+      zoom: s.zoom,
+      setZoom: s.setZoom,
+      pan: s.pan,
+      setPan: s.setPan,
+      selectedNodeId: s.selectedNodeId,
+      setSelectedNodeId: s.setSelectedNodeId,
+      setSelectedConnectionId: s.setSelectedConnectionId,
+      connectingFrom: s.connectingFrom,
+      setConnectingFrom: s.setConnectingFrom,
+      openModalNodeId: s.openModalNodeId,
+      setOpenModalNodeId: s.setOpenModalNodeId,
+      addNode: s.addNode,
+      addConnection: s.addConnection,
+      promoteIdea: s.promoteIdea,
+      fitToScreen: s.fitToScreen,
+    }))
+  );
 
   const canvasRef = useRef(null);
   const isPanning = useRef(false);
   const lastMouse = useRef({ x: 0, y: 0 });
+  // Refs kan ikke leses under render — egen state styrer .panning-klassen
+  const [panActive, setPanActive] = useState(false);
   const [contextMenu, setContextMenu] = useState(null);
   const [dragLine, setDragLine] = useState(null); // live connection line while dragging
 
-  // ── Pan (middle mouse or space+drag) ──
+  // ── Pan (middle mouse or drag on empty canvas) ──
   const onMouseDown = useCallback((e) => {
     if (e.button === 1 || (e.button === 0 && e.target === canvasRef.current)) {
       if (connectingFrom) return;
       isPanning.current = true;
+      setPanActive(true);
       lastMouse.current = { x: e.clientX, y: e.clientY };
       setSelectedNodeId(null);
       setSelectedConnectionId(null);
     }
-  }, [connectingFrom]);
+  }, [connectingFrom, setSelectedNodeId, setSelectedConnectionId]);
 
   const onMouseMove = useCallback((e) => {
     if (isPanning.current) {
@@ -47,31 +70,53 @@ export default function MapEditor() {
       const rect = canvasRef.current.getBoundingClientRect();
       const mx = (e.clientX - rect.left - pan.x) / zoom;
       const my = (e.clientY - rect.top - pan.y) / zoom;
-      setDragLine((dl) => dl ? { ...dl, toX: mx, toY: my } : null);
+      setDragLine((dl) => (dl ? { ...dl, toX: mx, toY: my } : null));
     }
-  }, [connectingFrom, dragLine, pan, zoom]);
+  }, [connectingFrom, dragLine, pan, zoom, setPan]);
 
-  const onMouseUp = useCallback(() => {
-    isPanning.current = false;
+  // Slipp av museknappen utenfor canvaset (toolbar, utenfor vinduet) skal
+  // også avslutte panorering — ellers henger kartet fast på cursoren.
+  useEffect(() => {
+    const endPan = () => {
+      isPanning.current = false;
+      setPanActive(false);
+    };
+    window.addEventListener("mouseup", endPan);
+    window.addEventListener("blur", endPan);
+    return () => {
+      window.removeEventListener("mouseup", endPan);
+      window.removeEventListener("blur", endPan);
+    };
   }, []);
 
-  // ── Zoom on scroll ──
+  // ── Zoom rundt et ankerpunkt (cursor for scroll, viewport-senter for knapper) ──
+  const zoomAt = useCallback((factor, cx, cy) => {
+    const { zoom: prevZoom, pan: prevPan } = useGigaStore.getState();
+    const newZoom = Math.min(3, Math.max(0.1, prevZoom * factor));
+    const scale = newZoom / prevZoom;
+    setZoom(newZoom);
+    setPan({
+      x: cx - scale * (cx - prevPan.x),
+      y: cy - scale * (cy - prevPan.y),
+    });
+  }, [setZoom, setPan]);
+
   const onWheel = useCallback((e) => {
     e.preventDefault();
-    const delta = e.deltaY > 0 ? 0.9 : 1.1;
     const rect = canvasRef.current.getBoundingClientRect();
-    const mx = e.clientX - rect.left;
-    const my = e.clientY - rect.top;
-    setZoom((prev) => {
-      const newZoom = Math.min(3, Math.max(0.1, prev * delta));
-      const scale = newZoom / prev;
-      setPan((p) => ({
-        x: mx - scale * (mx - p.x),
-        y: my - scale * (my - p.y),
-      }));
-      return newZoom;
-    });
-  }, []);
+    zoomAt(e.deltaY > 0 ? 0.9 : 1.1, e.clientX - rect.left, e.clientY - rect.top);
+  }, [zoomAt]);
+
+  const zoomButton = useCallback((factor) => {
+    const el = canvasRef.current;
+    if (!el) return;
+    zoomAt(factor, el.clientWidth / 2, el.clientHeight / 2);
+  }, [zoomAt]);
+
+  const handleFit = useCallback(() => {
+    const el = canvasRef.current;
+    if (el) fitToScreen({ width: el.clientWidth, height: el.clientHeight });
+  }, [fitToScreen]);
 
   useEffect(() => {
     const el = canvasRef.current;
@@ -90,7 +135,7 @@ export default function MapEditor() {
       x, y, w: 220, h: 110,
       title: "Ny node",
       notes: "",
-      color: "#e8edf5",
+      color: "",
       type: "Generell",
     });
   }, [pan, zoom, addNode]);
@@ -108,33 +153,36 @@ export default function MapEditor() {
   const startConnecting = useCallback((nodeId, startX, startY) => {
     setConnectingFrom(nodeId);
     setDragLine({ fromX: startX, fromY: startY, toX: startX, toY: startY });
-  }, []);
+  }, [setConnectingFrom]);
 
   const finishConnecting = useCallback(async (toNodeId) => {
-    if (connectingFrom && toNodeId && connectingFrom !== toNodeId) {
-      // Check duplicate
-      const exists = connections.some(
-        (c) => (c.fromNode === connectingFrom && c.toNode === toNodeId) ||
-                (c.fromNode === toNodeId && c.toNode === connectingFrom)
-      );
-      if (!exists) {
-        await addConnection({
-          fromNode: connectingFrom,
-          toNode: toNodeId,
-          label: "",
-          color: "",
-          bidirectional: false,
-        });
+    try {
+      if (connectingFrom && toNodeId && connectingFrom !== toNodeId) {
+        // Check duplicate
+        const exists = connections.some(
+          (c) => (c.fromNode === connectingFrom && c.toNode === toNodeId) ||
+                  (c.fromNode === toNodeId && c.toNode === connectingFrom)
+        );
+        if (!exists) {
+          await addConnection({
+            fromNode: connectingFrom,
+            toNode: toNodeId,
+            label: "",
+            color: "",
+            bidirectional: false,
+          });
+        }
       }
+    } finally {
+      setConnectingFrom(null);
+      setDragLine(null);
     }
-    setConnectingFrom(null);
-    setDragLine(null);
-  }, [connectingFrom, connections, addConnection]);
+  }, [connectingFrom, connections, addConnection, setConnectingFrom]);
 
   const cancelConnecting = useCallback(() => {
     setConnectingFrom(null);
     setDragLine(null);
-  }, []);
+  }, [setConnectingFrom]);
 
   // ESC to cancel connecting / deselect
   useEffect(() => {
@@ -148,24 +196,33 @@ export default function MapEditor() {
     };
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
-  }, [cancelConnecting]);
+  }, [cancelConnecting, setSelectedNodeId, setSelectedConnectionId]);
+
+  // Stabile callbacks slik at memoiserte GigaNode-er ikke re-rendres av pan/zoom
+  const handleSelectNode = useCallback((id) => {
+    setSelectedNodeId(id);
+    setSelectedConnectionId(null);
+  }, [setSelectedNodeId, setSelectedConnectionId]);
+
+  const handleOpenNode = useCallback((id) => {
+    setOpenModalNodeId(id);
+  }, [setOpenModalNodeId]);
 
   const canvasClass = [
     "canvas-area",
-    isPanning.current ? "panning" : "",
+    panActive ? "panning" : "",
     connectingFrom ? "connecting" : "",
   ].filter(Boolean).join(" ");
 
   return (
     <div className="app-layout">
-      <Toolbar />
+      <Toolbar onFitToScreen={handleFit} />
 
       <div
         ref={canvasRef}
         className={canvasClass}
         onMouseDown={onMouseDown}
         onMouseMove={onMouseMove}
-        onMouseUp={onMouseUp}
         onDoubleClick={onDoubleClick}
         onContextMenu={onContextMenu}
         onClick={() => { setContextMenu(null); if (connectingFrom) cancelConnecting(); }}
@@ -189,7 +246,6 @@ export default function MapEditor() {
             nodes={nodes}
             connections={connections}
             dragLine={dragLine}
-            zoom={zoom}
           />
 
           {/* Nodes */}
@@ -200,28 +256,27 @@ export default function MapEditor() {
               isSelected={selectedNodeId === node.id}
               isConnecting={!!connectingFrom}
               isConnectingFrom={connectingFrom === node.id}
-              onSelect={() => { setSelectedNodeId(node.id); setSelectedConnectionId(null); }}
-              onOpen={() => setOpenModalNodeId(node.id)}
+              onSelect={handleSelectNode}
+              onOpen={handleOpenNode}
               onStartConnect={startConnecting}
               onFinishConnect={finishConnecting}
-              zoom={zoom}
             />
           ))}
         </div>
 
         {/* Zoom controls */}
         <div className="zoom-controls">
-          <button className="btn btn-ghost btn-icon" onClick={() => setZoom(zoom / 1.2)}>−</button>
+          <button className="btn btn-ghost btn-icon" onClick={() => zoomButton(1 / 1.2)}>−</button>
           <span className="zoom-label">{Math.round(zoom * 100)}%</span>
-          <button className="btn btn-ghost btn-icon" onClick={() => setZoom(zoom * 1.2)}>+</button>
-          <button className="btn btn-ghost btn-icon" title="Tilpass skjerm" onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }); }}>⊡</button>
+          <button className="btn btn-ghost btn-icon" onClick={() => zoomButton(1.2)}>+</button>
+          <button className="btn btn-ghost btn-icon" title="Tilpass skjerm" onClick={handleFit}>⊡</button>
         </div>
 
         {/* Mini map */}
         <MiniMap nodes={nodes} pan={pan} zoom={zoom} canvasRef={canvasRef} />
 
         {/* Idea brainstorm panel */}
-        <IdeaPanel pan={pan} zoom={zoom} canvasRef={canvasRef} />
+        <IdeaPanel />
 
         {/* Hint */}
         {nodes.length === 0 && (
@@ -241,9 +296,10 @@ export default function MapEditor() {
         )}
       </div>
 
-      {/* Node detail modal */}
+      {/* Node detail modal — key sikrer full remount (og kladd-flush) per node */}
       {openModalNodeId && (
         <NodeModal
+          key={openModalNodeId}
           nodeId={openModalNodeId}
           onClose={() => setOpenModalNodeId(null)}
         />

@@ -1,5 +1,4 @@
-import { useRef, useEffect, useState } from "react";
-import useGigaStore from "../store/useGigaStore";
+import { useEffect, useState } from "react";
 
 const MINI_W = 200;
 const MINI_H = 130;
@@ -14,19 +13,31 @@ function getAccent2Color() {
 }
 
 export default function MiniMap({ nodes, pan, zoom, canvasRef }) {
-  const [accent, setAccent] = useState(getAccentColor());
-  const [accent2, setAccent2] = useState(getAccent2Color());
+  const [accent, setAccent] = useState(() => getAccentColor());
+  const [accent2, setAccent2] = useState(() => getAccent2Color());
+  // Canvas-dimensjonene leses i effekt (refs kan ikke leses under render)
+  // og følger vindus-/layoutendringer via ResizeObserver.
+  const [viewport, setViewport] = useState({ w: 800, h: 600 });
 
+  // Watch for accent color changes (theme switches)
   useEffect(() => {
-    const update = () => {
+    const observer = new MutationObserver(() => {
       setAccent(getAccentColor());
       setAccent2(getAccent2Color());
-    };
-    update();
-    const observer = new MutationObserver(update);
+    });
     observer.observe(document.documentElement, { attributes: true, attributeFilter: ["style"] });
     return () => observer.disconnect();
   }, []);
+
+  useEffect(() => {
+    const el = canvasRef?.current;
+    if (!el) return;
+    const observer = new ResizeObserver(() => {
+      setViewport({ w: el.clientWidth, h: el.clientHeight });
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [canvasRef]);
 
   if (nodes.length === 0) return null;
 
@@ -41,9 +52,8 @@ export default function MiniMap({ nodes, pan, zoom, canvasRef }) {
   const scaleY = MINI_H / worldH;
   const scale = Math.min(scaleX, scaleY);
 
-  const canvasEl = canvasRef?.current;
-  const vW = canvasEl ? canvasEl.clientWidth / zoom : 800;
-  const vH = canvasEl ? canvasEl.clientHeight / zoom : 600;
+  const vW = viewport.w / zoom;
+  const vH = viewport.h / zoom;
   const vX = -pan.x / zoom;
   const vY = -pan.y / zoom;
 
@@ -69,16 +79,28 @@ export default function MiniMap({ nodes, pan, zoom, canvasRef }) {
           );
         })}
 
-        <rect
-          x={Math.max(0, (vX - minX) * scale)}
-          y={Math.max(0, (vY - minY) * scale)}
-          width={Math.min(MINI_W, vW * scale)}
-          height={Math.min(MINI_H, vH * scale)}
-          rx={2}
-          fill="var(--accent-glow)"
-          stroke="var(--accent)"
-          strokeWidth={1.5}
-        />
+        {(() => {
+          // Klipp viewport-indikatoren mot minikartet i begge ender —
+          // ren clamping av x/y uten å krympe bredde/høyde markerte feil område
+          const rx = (vX - minX) * scale;
+          const ry = (vY - minY) * scale;
+          const x1 = Math.max(0, rx);
+          const y1 = Math.max(0, ry);
+          const x2 = Math.min(MINI_W, rx + vW * scale);
+          const y2 = Math.min(MINI_H, ry + vH * scale);
+          return (
+            <rect
+              x={x1}
+              y={y1}
+              width={Math.max(0, x2 - x1)}
+              height={Math.max(0, y2 - y1)}
+              rx={2}
+              fill="var(--accent-glow)"
+              stroke="var(--accent)"
+              strokeWidth={1.5}
+            />
+          );
+        })()}
       </svg>
     </div>
   );

@@ -1,40 +1,42 @@
 import { useState } from "react";
 import { signOut } from "firebase/auth";
-import { doc, updateDoc, serverTimestamp } from "firebase/firestore";
-import { auth, db } from "../firebase";
+import { auth } from "../firebase";
 import useGigaStore from "../store/useGigaStore";
 import ExportModal from "./ExportModal";
 import ThemePicker from "./ThemePicker";
+import { DraftInput } from "./DraftText";
 
-export default function Toolbar() {
-  const {
-    user, currentMapId, maps, nodes, connections,
-    setCurrentMapId, unsubscribeAll,
-    addNode, pan, zoom, setZoom, setPan,
-    selectedNodeId, deleteNode,
-    selectedConnectionId, deleteConnection,
-  } = useGigaStore();
+export default function Toolbar({ onFitToScreen }) {
+  const user = useGigaStore((s) => s.user);
+  const currentMapId = useGigaStore((s) => s.currentMapId);
+  const currentMap = useGigaStore((s) =>
+    s.maps.find((m) => m.id === s.currentMapId)
+  );
+  const nodeCount = useGigaStore((s) => s.nodes.length);
+  const connectionCount = useGigaStore((s) => s.connections.length);
+  const selectedNodeId = useGigaStore((s) => s.selectedNodeId);
+  const selectedConnectionId = useGigaStore((s) => s.selectedConnectionId);
+  const closeMap = useGigaStore((s) => s.closeMap);
+  const addNode = useGigaStore((s) => s.addNode);
+  const deleteNode = useGigaStore((s) => s.deleteNode);
+  const deleteConnection = useGigaStore((s) => s.deleteConnection);
+  const renameMap = useGigaStore((s) => s.renameMap);
 
-  const currentMap = maps.find((m) => m.id === currentMapId);
   const [showExport, setShowExport] = useState(false);
-  const [savingTitle, setSavingTitle] = useState(false);
-  const [title, setTitle] = useState(currentMap?.title || "");
 
-  const saveTitle = async () => {
-    if (!currentMapId || !title.trim()) return;
-    await updateDoc(doc(db, "maps", currentMapId), {
-      title: title.trim(),
-      updatedAt: serverTimestamp(),
-    });
-  };
-
-  const goToDashboard = () => {
-    unsubscribeAll();
-    setCurrentMapId(null);
+  // Tomt navn avvises (returnerer false → DraftInput ruller tilbake på blur).
+  // Returnerer den trimmede verdien så DraftInput gjenkjenner snapshot-ekkoet.
+  const saveTitle = (value) => {
+    const title = value.trim();
+    if (!title || !currentMapId) return false;
+    renameMap(currentMapId, title);
+    return title;
   };
 
   const handleAddNode = () => {
-    // Add node to visible center of canvas
+    // Add node to visible center of canvas. pan/zoom leses via getState()
+    // så Toolbar ikke re-rendres på hver eneste panorering.
+    const { pan, zoom } = useGigaStore.getState();
     const centerX = (-pan.x + window.innerWidth / 2) / zoom;
     const centerY = (-pan.y + window.innerHeight / 2) / zoom;
     addNode({
@@ -42,26 +44,8 @@ export default function Toolbar() {
       w: 220, h: 110,
       title: "Ny node",
       notes: "",
-      color: "#e8edf5",
+      color: "",
       type: "Generell",
-    });
-  };
-
-  const fitToScreen = () => {
-    if (nodes.length === 0) { setZoom(1); setPan({ x: 0, y: 0 }); return; }
-    const minX = Math.min(...nodes.map((n) => n.x));
-    const minY = Math.min(...nodes.map((n) => n.y));
-    const maxX = Math.max(...nodes.map((n) => n.x + n.w));
-    const maxY = Math.max(...nodes.map((n) => n.y + n.h));
-    const W = window.innerWidth - 40;
-    const H = window.innerHeight - 100;
-    const scaleX = W / (maxX - minX + 80);
-    const scaleY = H / (maxY - minY + 80);
-    const newZoom = Math.min(1.5, Math.min(scaleX, scaleY));
-    setZoom(newZoom);
-    setPan({
-      x: (W / 2) - ((minX + maxX) / 2) * newZoom + 20,
-      y: (H / 2) - ((minY + maxY) / 2) * newZoom + 60,
     });
   };
 
@@ -69,19 +53,21 @@ export default function Toolbar() {
     <>
       <div className="toolbar">
         {/* Back */}
-        <button className="btn btn-ghost btn-icon" onClick={goToDashboard} title="Tilbake til kart">
+        <button className="btn btn-ghost btn-icon" onClick={closeMap} title="Tilbake til kart">
           ←
         </button>
 
         <div className="toolbar-logo">🗺</div>
 
-        {/* Map title */}
-        <input
+        {/* Map title. key remonterer feltet ved kartbytte, så en ventende
+            kladd flushes mot det GAMLE kartets id (via saveTitle-closuren)
+            i stedet for å omdøpe kartet man bytter til. */}
+        <DraftInput
+          key={currentMapId || "no-map"}
           className="toolbar-map-name"
-          value={title || currentMap?.title || ""}
-          onChange={(e) => setTitle(e.target.value)}
-          onBlur={saveTitle}
-          onKeyDown={(e) => e.key === "Enter" && saveTitle()}
+          value={currentMap?.title || ""}
+          onCommit={saveTitle}
+          onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }}
           placeholder="Kartnavn..."
         />
 
@@ -118,14 +104,14 @@ export default function Toolbar() {
 
         {/* Stats */}
         <div style={{ fontSize: 12, color: "var(--text-muted)", display: "flex", gap: 14 }}>
-          <span>📦 {nodes.length} noder</span>
-          <span>🔗 {connections.length} koblinger</span>
+          <span>📦 {nodeCount} noder</span>
+          <span>🔗 {connectionCount} koblinger</span>
         </div>
 
         <div className="toolbar-sep" />
 
         {/* Fit to screen */}
-        <button className="btn btn-ghost btn-icon" onClick={fitToScreen} title="Tilpass til skjerm">
+        <button className="btn btn-ghost btn-icon" onClick={onFitToScreen} title="Tilpass til skjerm">
           ⊡
         </button>
 

@@ -1,24 +1,26 @@
-import { useState } from "react";
 import useGigaStore from "../store/useGigaStore";
 import { getSwatches } from "../themes";
-
-const TYPE_COLORS = {
-  Avdeling: "#7c3aed", System: "#0284c7", Prosess: "#059669",
-  Person: "#d97706", Mål: "#dc2626", Problem: "#b45309", Idé: "#6366f1", Generell: "#1e3a5f",
-};
-
-const NODE_TYPES = Object.keys(TYPE_COLORS);
+import { NODE_TYPES, TYPE_COLORS, TYPE_ICONS } from "../nodeTypes";
+import { DraftInput, DraftTextarea } from "./DraftText";
 
 const CONN_COLORS = ["#6366f1", "#8b5cf6", "#06b6d4", "#10b981", "#f59e0b", "#ef4444", "#f472b6", "#94a3b8"];
 
 export default function NodeModal({ nodeId, onClose }) {
-  const { nodes, connections, updateNode, deleteNode, updateConnection } = useGigaStore();
-  const node = nodes.find((n) => n.id === nodeId);
+  const node = useGigaStore((s) => s.nodes.find((n) => n.id === nodeId));
+  const nodes = useGigaStore((s) => s.nodes);
+  const connections = useGigaStore((s) => s.connections);
+  const mapId = useGigaStore((s) => s.currentMapId);
+  const updateNode = useGigaStore((s) => s.updateNode);
+  const deleteNode = useGigaStore((s) => s.deleteNode);
+  const updateConnection = useGigaStore((s) => s.updateConnection);
+
   const nodeConns = connections.filter((c) => c.fromNode === nodeId || c.toNode === nodeId);
 
   if (!node) return null;
 
-  const update = (field, val) => updateNode(nodeId, { [field]: val });
+  // Eksplisitt mapId: kladd som flushes idet modalen lukkes/kartet byttes
+  // skal lagres i kartet den ble skrevet i
+  const update = (field, val) => updateNode(nodeId, { [field]: val }, mapId);
 
   return (
     <div className="modal-overlay" onClick={onClose}>
@@ -27,15 +29,12 @@ export default function NodeModal({ nodeId, onClose }) {
         {/* Header */}
         <div className="modal-header">
           <span style={{ fontSize: 22 }}>
-            {node.type === "Avdeling" ? "🏢" : node.type === "System" ? "⚙️" :
-             node.type === "Prosess" ? "🔄" : node.type === "Person" ? "👤" :
-             node.type === "Mål" ? "🎯" : node.type === "Problem" ? "⚠️" :
-             node.type === "Idé" ? "💡" : "📌"}
+            {TYPE_ICONS[node.type] || TYPE_ICONS.Generell}
           </span>
-          <input
+          <DraftInput
             className="modal-title-input"
             value={node.title}
-            onChange={(e) => update("title", e.target.value)}
+            onCommit={(v) => update("title", v)}
             placeholder="Tittel..."
           />
           <button className="btn btn-ghost btn-icon" onClick={onClose} title="Lukk">✕</button>
@@ -46,9 +45,9 @@ export default function NodeModal({ nodeId, onClose }) {
           {/* Notes */}
           <div className="modal-section">
             <label>📝 Notater</label>
-            <textarea
+            <DraftTextarea
               value={node.notes || ""}
-              onChange={(e) => update("notes", e.target.value)}
+              onCommit={(v) => update("notes", v)}
               placeholder="Beskriv denne noden – hva skjer her, hvem er ansvarlig, hvilke systemer er involvert..."
               style={{ minHeight: 120 }}
             />
@@ -63,7 +62,12 @@ export default function NodeModal({ nodeId, onClose }) {
                   key={t}
                   className={`type-pill${node.type === t ? " active" : ""}`}
                   onClick={() => update("type", t)}
-                  style={node.type === t ? { background: TYPE_COLORS[t], borderColor: TYPE_COLORS[t] } : {}}
+                  style={node.type === t
+                    ? {
+                        background: TYPE_COLORS[t] || "var(--accent)",
+                        borderColor: TYPE_COLORS[t] || "var(--accent)",
+                      }
+                    : {}}
                 >
                   {t}
                 </button>
@@ -104,9 +108,9 @@ export default function NodeModal({ nodeId, onClose }) {
                       <span style={{ flex: 1, fontSize: 13, color: "var(--text-primary)" }}>
                         {other?.title || "Ukjent"}
                       </span>
-                      <input
+                      <DraftInput
                         value={conn.label || ""}
-                        onChange={(e) => updateConnection(conn.id, { label: e.target.value })}
+                        onCommit={(v) => updateConnection(conn.id, { label: v }, mapId)}
                         placeholder="Label..."
                         style={{ width: 110, fontSize: 12 }}
                       />
@@ -114,7 +118,7 @@ export default function NodeModal({ nodeId, onClose }) {
                         {CONN_COLORS.map((c) => (
                           <div
                             key={c}
-                            onClick={() => updateConnection(conn.id, { color: c })}
+                            onClick={() => updateConnection(conn.id, { color: c }, mapId)}
                             style={{
                               width: 14, height: 14, borderRadius: "50%", background: c,
                               cursor: "pointer", border: conn.color === c ? "2px solid #1e293b" : "2px solid transparent",

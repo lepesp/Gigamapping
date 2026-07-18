@@ -1,13 +1,18 @@
 import { useState } from "react";
 import { signOut } from "firebase/auth";
-import { collection, addDoc, deleteDoc, doc, serverTimestamp } from "firebase/firestore";
+import { collection, addDoc, serverTimestamp } from "firebase/firestore";
 import { auth, db } from "../firebase";
 import useGigaStore from "../store/useGigaStore";
 
 export default function Dashboard() {
-  const { user, maps, setCurrentMapId, subscribeToMap } = useGigaStore();
+  const user = useGigaStore((s) => s.user);
+  const maps = useGigaStore((s) => s.maps);
+  const subscribeToMap = useGigaStore((s) => s.subscribeToMap);
+  const deleteMap = useGigaStore((s) => s.deleteMap);
+
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState("");
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
 
   const openMap = (map) => {
@@ -15,7 +20,9 @@ export default function Dashboard() {
   };
 
   const createMap = async () => {
-    if (!newName.trim()) return;
+    // In-flight-vakt: dobbel Enter / dobbeltklikk skal ikke gi duplikatkart
+    if (busy || !newName.trim()) return;
+    setBusy(true);
     setError(null);
     try {
       const ref = await addDoc(collection(db, "maps"), {
@@ -30,6 +37,8 @@ export default function Dashboard() {
     } catch (err) {
       console.error("Create map failed:", err);
       setError(`${err.code}: ${err.message}`);
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -75,7 +84,9 @@ export default function Dashboard() {
                 onKeyDown={(e) => { if (e.key === "Enter") createMap(); if (e.key === "Escape") setCreating(false); }}
               />
               <div style={{ display: "flex", gap: 8 }}>
-                <button className="btn btn-primary" onClick={createMap} style={{ flex: 1 }}>Opprett</button>
+                <button className="btn btn-primary" onClick={createMap} disabled={busy} style={{ flex: 1 }}>
+                  {busy ? "Oppretter..." : "Opprett"}
+                </button>
                 <button className="btn btn-ghost" onClick={() => setCreating(false)}>Avbryt</button>
               </div>
               {error && (
@@ -115,8 +126,10 @@ export default function Dashboard() {
                 }}
                 onClick={(e) => {
                   e.stopPropagation();
-                  if (window.confirm(`Slette "${map.title}"?`)) {
-                    deleteDoc(doc(db, "maps", map.id));
+                  if (window.confirm(`Slette "${map.title}"? Alle noder, koblinger og ideer slettes permanent.`)) {
+                    // deleteMap sletter også subkolleksjonene — Firestore
+                    // kaskade-sletter aldri selv
+                    deleteMap(map.id);
                   }
                 }}
               >
