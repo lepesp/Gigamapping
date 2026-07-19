@@ -116,14 +116,16 @@ const GUARDED_ACTIONS = [
   "addConnection", "updateConnection", "deleteConnection",
   "addIdea", "deleteIdea", "promoteIdea",
   "makePage", "unmakePage",
-  "sendChatMessage", "deleteMap",
+  "sendChatMessage", "deleteMap", "updateMapMeta",
 ];
 
-// Endringer som skal telle som "kartet ble oppdatert". Chat og sletting
-// av selve kartet holdes utenfor — det første er ikke innhold, det andre
-// ville skrevet til et dokument som nettopp forsvant.
+// Endringer som skal telle som "kartet ble oppdatert". Utenfor står:
+// chat (ikke innhold), deleteMap (dokumentet er borte) og updateMapMeta
+// (setter updatedAt selv — ellers ble det dobbel skriving).
 const TOUCHING_ACTIONS = new Set(
-  GUARDED_ACTIONS.filter((n) => n !== "sendChatMessage" && n !== "deleteMap")
+  GUARDED_ACTIONS.filter(
+    (n) => !["sendChatMessage", "deleteMap", "updateMapMeta"].includes(n)
+  )
 );
 
 const withErrorHandling = (config) => (set, get, api) => {
@@ -722,6 +724,17 @@ const useGigaStore = create(withErrorHandling((set, get) => ({
       currentMapId: null,
       maps: [],
       syncError: null,
+    });
+  },
+
+  // Kartets tekstfelt (navn og formål). Går gjennom storen så feil vises
+  // i toasten i stedet for å forsvinne stille — særlig relevant for
+  // redaktører, som reglene behandler annerledes enn eiere.
+  updateMapMeta: async (mapId, updates) => {
+    if (!mapId) return;
+    await updateDoc(doc(db, "maps", mapId), {
+      ...updates,
+      updatedAt: serverTimestamp(),
     });
   },
 

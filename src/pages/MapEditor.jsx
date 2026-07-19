@@ -9,6 +9,12 @@ import ContextMenu from "../components/ContextMenu";
 import IdeaPanel from "../components/IdeaPanel";
 import PresenceChat from "../components/PresenceChat";
 
+// Hvor mye ett zoom-steg endrer skalaen. Lavere tall = roligere zooming.
+// Scrollhjulet gir mange hendelser etter hverandre, så det tåler et
+// mindre steg enn knappene.
+const WHEEL_ZOOM_STEP = 1.05;  // 5 % per hakk
+const BUTTON_ZOOM_STEP = 1.1;  // 10 % per klikk
+
 export default function MapEditor() {
   const {
     nodes, connections, zoom, setZoom, pan, setPan,
@@ -109,7 +115,11 @@ export default function MapEditor() {
   const onWheel = useCallback((e) => {
     e.preventDefault();
     const rect = canvasRef.current.getBoundingClientRect();
-    zoomAt(e.deltaY > 0 ? 0.9 : 1.1, e.clientX - rect.left, e.clientY - rect.top);
+    zoomAt(
+      e.deltaY > 0 ? 1 / WHEEL_ZOOM_STEP : WHEEL_ZOOM_STEP,
+      e.clientX - rect.left,
+      e.clientY - rect.top
+    );
   }, [zoomAt]);
 
   // Zoom-knappene ankret rundt verdens origo, så innhold som lå langt
@@ -269,9 +279,9 @@ export default function MapEditor() {
 
         {/* Zoom controls */}
         <div className="zoom-controls">
-          <button className="btn btn-ghost btn-icon" onClick={() => zoomButton(1 / 1.2)}>−</button>
+          <button className="btn btn-ghost btn-icon" onClick={() => zoomButton(1 / BUTTON_ZOOM_STEP)}>−</button>
           <span className="zoom-label">{Math.round(zoom * 100)}%</span>
-          <button className="btn btn-ghost btn-icon" onClick={() => zoomButton(1.2)}>+</button>
+          <button className="btn btn-ghost btn-icon" onClick={() => zoomButton(BUTTON_ZOOM_STEP)}>+</button>
           <button className="btn btn-ghost btn-icon" title="Tilpass skjerm" onClick={handleFit}>⊡</button>
         </div>
 

@@ -41,9 +41,24 @@ export default function ExportModal({ onClose }) {
     lines.push(
       `Noder: ${nodes.length} | Koblinger: ${connections.length} | Underkart: ${pageCount} | Nivåer: ${maxDepth + 1}`
     );
+
+    // Formålet først — uten det må agenten gjette hva kartet er til for
+    if (currentMap?.description) {
+      lines.push("");
+      lines.push("## FORMÅL");
+      lines.push(indentBlock(currentMap.description, "    "));
+    }
+
     lines.push("");
+    lines.push("## SLIK LESER DU DOKUMENTET");
     lines.push(
-      "Kartet er hierarkisk: noder merket ⬚ er underkart som inneholder sitt eget lerret."
+      "Kartet er hierarkisk. Noder merket ⬚ er underkart med sitt eget lerret,"
+    );
+    lines.push(
+      "og innholdet deres står i et eget avsnitt lenger nede. STRUKTUR gir"
+    );
+    lines.push(
+      "helheten; deretter kommer ett avsnitt per nivå med notater og flyt."
     );
 
     // ── Oversikt: hele treet som innrykket disposisjon ──
@@ -77,32 +92,35 @@ export default function ExportModal({ onClose }) {
         (c) => (c.parentId ?? null) === (parentId ?? null)
       );
 
-      levelNodes.forEach((n) => {
+      // Flyten på dette nivået — hver kobling ÉN gang, med navn i stedet
+      // for id-er, så agenten slipper å gjøre oppslag
+      if (levelConns.length > 0) {
+        lines.push("");
+        lines.push("Flyt:");
+        levelConns.forEach((c) => {
+          const from = nodes.find((x) => x.id === c.fromNode);
+          const to = nodes.find((x) => x.id === c.toNode);
+          const label = c.label ? `  [${oneLine(c.label)}]` : "";
+          lines.push(
+            `  ${oneLine(from?.title) || "?"} → ${oneLine(to?.title) || "?"}${label}`
+          );
+        });
+      }
+
+      // Bare noder som faktisk har noe å fortelle får eget avsnitt.
+      // Rene bokser uten notater står allerede i STRUKTUR og flyten.
+      const described = levelNodes.filter((n) => n.notes || n.isPage);
+      described.forEach((n) => {
         const kids = childrenOf(n.id).length;
         const marker = n.isPage ? " ⬚ UNDERKART" : "";
         lines.push(`\n### [${oneLine(n.type) || "Generell"}] ${oneLine(n.title)}${marker}`);
-        lines.push(`ID: ${n.id}`);
         if (n.isPage) {
           lines.push(
-            `Underkart: ${kids} ${kids === 1 ? "element" : "elementer"} (se eget avsnitt nedenfor)`
+            `Inneholder ${kids} ${kids === 1 ? "element" : "elementer"} — se eget avsnitt nedenfor.`
           );
         }
         if (n.notes) {
-          lines.push("Notater:");
           lines.push(indentBlock(n.notes, "    "));
-        }
-        const conns = levelConns.filter((c) => c.fromNode === n.id || c.toNode === n.id);
-        if (conns.length > 0) {
-          lines.push("Koblinger:");
-          conns.forEach((c) => {
-            const dir = c.fromNode === n.id ? "→" : "←";
-            const other = nodes.find(
-              (x) => x.id === (c.fromNode === n.id ? c.toNode : c.fromNode)
-            );
-            lines.push(
-              `  ${dir} ${oneLine(other?.title) || "?"} ${c.label ? `(${oneLine(c.label)})` : ""}`
-            );
-          });
         }
       });
 
@@ -134,7 +152,7 @@ export default function ExportModal({ onClose }) {
       }));
 
     return JSON.stringify({
-      map: { id: currentMapId, title: currentMap?.title },
+      map: { id: currentMapId, title: currentMap?.title, description: currentMap?.description || "" },
       stats: {
         nodes: nodes.length,
         connections: connections.length,
@@ -203,8 +221,8 @@ export default function ExportModal({ onClose }) {
           {/* Tabs */}
           <div style={{ display: "flex", gap: 8, marginBottom: 4 }}>
             {[
-              { key: "ai", label: "🤖 AI-eksport" },
-              { key: "json", label: "{ } JSON" },
+              { key: "ai", label: "🤖 AI-eksport (anbefalt)" },
+              { key: "json", label: "{ } JSON (backup)" },
               { key: "png", label: "🖼 PNG" },
             ].map((t) => (
               <button
@@ -234,7 +252,7 @@ export default function ExportModal({ onClose }) {
                 <label>
                   {tab === "ai"
                     ? "Strukturert tekst – lim inn direkte til AI-agenten for full forståelse av systemet"
-                    : "JSON – for import/backup eller programmering"}
+                    : "JSON – for backup og import. Til AI-samtaler er AI-fanen bedre: den er kortere og skriver relasjonene med navn i stedet for id-er."}
                 </label>
                 <textarea
                   className="export-textarea"

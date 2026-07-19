@@ -1212,3 +1212,13 @@ button.breadcrumb-crumb:hover {
   font-family: inherit;
 }
 .error-toast button:hover { color: var(--text-primary); }
+
+/* ── "Om kartet"-knapp i toolbaren ── */
+.map-info-btn {
+  font-size: 15px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+.map-info-btn:hover { color: var(--accent); }
+/* Fylt tilstand når formålet faktisk er beskrevet */
+.map-info-btn.has-text { color: var(--accent); }

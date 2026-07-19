@@ -67,18 +67,19 @@ service cloud.firestore {
                     && request.resource.data.ownerId == uid();
 
       // Owners can update anything on the map (including members)
-      // Editors can ONLY update the 'updatedAt' field — nothing else
+      // Editors can update the map's text (title/description) and updatedAt —
+      // but never members, eierskap eller ikon
       // Invite redemption: users can add themselves as a member
       allow update: if isSignedIn()
                     && (
                       // Owner — full update access
                       resource.data.ownerId == uid()
 
-                      // Editor — can only touch updatedAt
+                      // Editor — tekstfelt og updatedAt
                       || (
                         hasRole(mapId, 'editor')
                         && request.resource.data.diff(resource.data).affectedKeys()
-                            .hasOnly(['updatedAt'])
+                            .hasOnly(['title', 'description', 'updatedAt'])
                       )
 
                       // Invite redemption — user can add themselves as member

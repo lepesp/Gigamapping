@@ -1,11 +1,11 @@
 import { useState } from "react";
 import { signOut } from "firebase/auth";
-import { doc, updateDoc, serverTimestamp } from "firebase/firestore";
-import { auth, db } from "../firebase";
+import { auth } from "../firebase";
 import useGigaStore, { pageTrail } from "../store/useGigaStore";
 import ExportModal from "./ExportModal";
 import ThemePicker from "./ThemePicker";
 import ShareModal from "./ShareModal";
+import MapInfoModal from "./MapInfoModal";
 
 export default function Toolbar({ onFitToScreen }) {
   const {
@@ -16,6 +16,7 @@ export default function Toolbar({ onFitToScreen }) {
     selectedConnectionId, deleteConnection,
     userRole,
     currentPageId, setCurrentPageId, descendantCount,
+    updateMapMeta,
   } = useGigaStore();
 
   // Stien fra kartets toppnivå ned hit — brukes til brødsmulene
@@ -38,6 +39,7 @@ export default function Toolbar({ onFitToScreen }) {
   const currentMap = maps.find((m) => m.id === currentMapId);
   const [showExport, setShowExport] = useState(false);
   const [showShare, setShowShare] = useState(false);
+  const [showInfo, setShowInfo] = useState(false);
   // Kladden lever bare mens man redigerer og seedes ved fokus. Da trengs
   // ingen synk-effekt, og feltet kan ikke rykke tilbake til gammelt navn
   // midt i skrivingen fordi et snapshot kom inn.
@@ -52,19 +54,12 @@ export default function Toolbar({ onFitToScreen }) {
     setIsEditing(true);
   };
 
-  const saveTitle = async () => {
+  const saveTitle = () => {
     setIsEditing(false);
     if (!currentMapId || !title.trim() || title.trim() === currentMap?.title) return;
-    try {
-      await updateDoc(doc(db, "maps", currentMapId), {
-        title: title.trim(),
-        updatedAt: serverTimestamp(),
-      });
-    } catch (err) {
-      console.error("Failed to save title:", err);
-      // Revert on error
-      setTitle(currentMap?.title || "");
-    }
+    // Går via storen, så en avvist skriving vises som feil i stedet for
+    // å forsvinne stille
+    updateMapMeta(currentMapId, { title: title.trim() });
   };
 
   const goToDashboard = () => {
@@ -116,6 +111,17 @@ export default function Toolbar({ onFitToScreen }) {
           placeholder="Kartnavn..."
           readOnly={isViewer}
         />
+
+        {/* Kartets formål — legges øverst i AI-eksporten */}
+        <button
+          className={`btn btn-ghost btn-icon map-info-btn${currentMap?.description ? " has-text" : ""}`}
+          onClick={() => setShowInfo(true)}
+          title={currentMap?.description
+            ? "Om kartet — formålet er beskrevet"
+            : "Om kartet — beskriv hva kartet er til for"}
+        >
+          ⓘ
+        </button>
 
         {/* Brødsmuler — vises bare når man står inne i et underkart */}
         {trail.length > 0 && (
@@ -237,6 +243,7 @@ export default function Toolbar({ onFitToScreen }) {
       </div>
 
       {showExport && <ExportModal onClose={() => setShowExport(false)} />}
+      {showInfo && <MapInfoModal onClose={() => setShowInfo(false)} readOnly={isViewer} />}
       {showShare && <ShareModal mapId={currentMapId} onClose={() => setShowShare(false)} />}
     </>
   );
